@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -231,7 +230,9 @@ export const JobsTab = () => {
                   <CardTitle className="text-lg flex items-center gap-2">
                     {job.title}
                     {job.is_recurring && (
-                      <RotateCcw className="w-4 h-4 text-blue-600" title="Recurring job" />
+                      <span title="Recurring job">
+                        <RotateCcw className="w-4 h-4 text-blue-600" />
+                      </span>
                     )}
                   </CardTitle>
                   <CardDescription className="flex items-center gap-2 mt-1">
