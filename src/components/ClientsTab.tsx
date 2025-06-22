@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,14 +20,44 @@ export const ClientsTab = () => {
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [userCompanyId, setUserCompanyId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const fetchUserCompanyId = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No authenticated user');
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      setUserCompanyId(profile?.company_id || null);
+      return profile?.company_id || null;
+    } catch (error: any) {
+      console.error('Failed to fetch user company ID:', error);
+      return null;
+    }
+  };
 
   const fetchClients = async () => {
     console.log('Fetching clients...');
     try {
+      const companyId = await fetchUserCompanyId();
+      
+      if (!companyId) {
+        console.log('No company ID found, showing empty state');
+        setClients([]);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('clients')
         .select('*')
+        .eq('company_id', companyId)
         .order('name', { ascending: true });
 
       if (error) {
@@ -65,6 +94,25 @@ export const ClientsTab = () => {
 
   if (loading) {
     return <div className="flex justify-center p-8">Loading clients...</div>;
+  }
+
+  if (!userCompanyId) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Clients</h2>
+          <p className="text-gray-600">Manage your client information</p>
+        </div>
+        <Card className="p-12 text-center">
+          <CardContent>
+            <p className="text-gray-500 mb-4">Please generate a Company ID first</p>
+            <p className="text-sm text-gray-400">
+              Go to Account tab and click "Generate Company ID" to get started
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -132,6 +180,7 @@ export const ClientsTab = () => {
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
         onClientCreated={fetchClients}
+        companyId={userCompanyId}
       />
     </div>
   );

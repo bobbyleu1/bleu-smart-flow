@@ -8,6 +8,7 @@ import { JobsTab } from "./JobsTab";
 import { ClientsTab } from "./ClientsTab";
 import { PaymentsTab } from "./PaymentsTab";
 import { RevenueTab } from "./RevenueTab";
+import { ProfileTab } from "./ProfileTab";
 import { LogOut, Receipt } from "lucide-react";
 
 interface DashboardProps {
@@ -50,11 +51,12 @@ export const Dashboard = ({ session }: DashboardProps) => {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto p-4">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 max-w-lg">
+          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
             <TabsTrigger value="jobs">Jobs</TabsTrigger>
             <TabsTrigger value="clients">Clients</TabsTrigger>
             <TabsTrigger value="payments">Payments</TabsTrigger>
             <TabsTrigger value="revenue">Revenue</TabsTrigger>
+            <TabsTrigger value="profile">Account</TabsTrigger>
           </TabsList>
 
           <TabsContent value="jobs">
@@ -71,6 +73,10 @@ export const Dashboard = ({ session }: DashboardProps) => {
 
           <TabsContent value="revenue">
             <RevenueTab />
+          </TabsContent>
+
+          <TabsContent value="profile">
+            <ProfileTab />
           </TabsContent>
         </Tabs>
       </main>

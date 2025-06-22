@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,9 +11,10 @@ interface CreateClientDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onClientCreated: () => void;
+  companyId: string | null;
 }
 
-export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: CreateClientDialogProps) => {
+export const CreateClientDialog = ({ open, onOpenChange, onClientCreated, companyId }: CreateClientDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -26,6 +26,16 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: Crea
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!companyId) {
+      toast({
+        title: "Error",
+        description: "Please generate a Company ID first",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
 
     console.log('Attempting to create client with data:', formData);
@@ -36,6 +46,7 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: Crea
         email: formData.email.trim(),
         phone: formData.phone.trim() || null,
         address: formData.address.trim() || null,
+        company_id: companyId,
       };
 
       console.log('Inserting client data:', clientData);
@@ -145,7 +156,7 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: Crea
             </Button>
             <Button
               type="submit"
-              disabled={loading}
+              disabled={loading || !companyId}
               className="flex-1 bg-blue-600 hover:bg-blue-700"
             >
               {loading ? "Adding..." : "Add Client"}
