@@ -25,6 +25,7 @@ interface CreateJobDialogProps {
 export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobDialogProps) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingClients, setLoadingClients] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
     client_id: "",
@@ -36,20 +37,30 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
   const { toast } = useToast();
 
   const fetchClients = async () => {
+    console.log('Fetching clients for job creation...');
+    setLoadingClients(true);
     try {
       const { data, error } = await supabase
         .from('clients')
         .select('id, name, email')
-        .order('name');
+        .order('name', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching clients:', error);
+        throw error;
+      }
+      
+      console.log('Clients fetched for job creation:', data);
       setClients(data || []);
     } catch (error: any) {
+      console.error('Failed to fetch clients:', error);
       toast({
         title: "Error",
         description: "Failed to fetch clients",
         variant: "destructive",
       });
+    } finally {
+      setLoadingClients(false);
     }
   };
 
@@ -63,20 +74,32 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
     e.preventDefault();
     setLoading(true);
 
-    try {
-      const { error } = await supabase
-        .from('jobs')
-        .insert([{
-          title: formData.title,
-          client_id: formData.client_id,
-          price: parseFloat(formData.price),
-          description: formData.description,
-          scheduled_date: formData.scheduled_date,
-          is_recurring: formData.is_recurring,
-          status: 'pending'
-        }]);
+    console.log('Attempting to create job with data:', formData);
 
-      if (error) throw error;
+    try {
+      const jobData = {
+        title: formData.title.trim(),
+        client_id: formData.client_id,
+        price: parseFloat(formData.price),
+        description: formData.description.trim() || null,
+        scheduled_date: formData.scheduled_date,
+        is_recurring: formData.is_recurring,
+        status: 'pending' as const
+      };
+
+      console.log('Inserting job data:', jobData);
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .insert([jobData])
+        .select();
+
+      if (error) {
+        console.error('Job insertion error:', error);
+        throw error;
+      }
+
+      console.log('Job created successfully:', data);
 
       toast({
         title: "Success",
@@ -95,9 +118,10 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
       onJobCreated();
       onOpenChange(false);
     } catch (error: any) {
+      console.error('Error creating job:', error);
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to create job",
         variant: "destructive",
       });
     } finally {
@@ -117,7 +141,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="title">Job Title</Label>
+            <Label htmlFor="title">Job Title *</Label>
             <Input
               id="title"
               value={formData.title}
@@ -128,14 +152,14 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
           </div>
 
           <div>
-            <Label htmlFor="client">Client</Label>
+            <Label htmlFor="client">Client *</Label>
             <Select
               value={formData.client_id}
               onValueChange={(value) => setFormData({ ...formData, client_id: value })}
               required
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select a client" />
+                <SelectValue placeholder={loadingClients ? "Loading clients..." : "Select a client"} />
               </SelectTrigger>
               <SelectContent>
                 {clients.map((client) => (
@@ -145,14 +169,20 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
                 ))}
               </SelectContent>
             </Select>
+            {clients.length === 0 && !loadingClients && (
+              <p className="text-sm text-gray-500 mt-1">
+                No clients found. Please add a client first.
+              </p>
+            )}
           </div>
 
           <div>
-            <Label htmlFor="price">Price ($)</Label>
+            <Label htmlFor="price">Price ($) *</Label>
             <Input
               id="price"
               type="number"
               step="0.01"
+              min="0"
               value={formData.price}
               onChange={(e) => setFormData({ ...formData, price: e.target.value })}
               placeholder="0.00"
@@ -161,7 +191,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
           </div>
 
           <div>
-            <Label htmlFor="scheduled_date">Scheduled Date</Label>
+            <Label htmlFor="scheduled_date">Scheduled Date *</Label>
             <Input
               id="scheduled_date"
               type="date"
@@ -202,7 +232,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
             </Button>
             <Button
               type="submit"
-              disabled={loading}
+              disabled={loading || clients.length === 0}
               className="flex-1 bg-blue-600 hover:bg-blue-700"
             >
               {loading ? "Creating..." : "Create Job"}

@@ -24,15 +24,22 @@ export const ClientsTab = () => {
   const { toast } = useToast();
 
   const fetchClients = async () => {
+    console.log('Fetching clients...');
     try {
       const { data, error } = await supabase
         .from('clients')
         .select('*')
-        .order('name');
+        .order('name', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching clients:', error);
+        throw error;
+      }
+      
+      console.log('Clients fetched successfully:', data);
       setClients(data || []);
     } catch (error: any) {
+      console.error('Failed to fetch clients:', error);
       toast({
         title: "Error",
         description: "Failed to fetch clients",

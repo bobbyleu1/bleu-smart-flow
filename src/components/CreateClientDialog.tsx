@@ -28,12 +28,29 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: Crea
     e.preventDefault();
     setLoading(true);
 
-    try {
-      const { error } = await supabase
-        .from('clients')
-        .insert([formData]);
+    console.log('Attempting to create client with data:', formData);
 
-      if (error) throw error;
+    try {
+      const clientData = {
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim() || null,
+        address: formData.address.trim() || null,
+      };
+
+      console.log('Inserting client data:', clientData);
+
+      const { data, error } = await supabase
+        .from('clients')
+        .insert([clientData])
+        .select();
+
+      if (error) {
+        console.error('Client insertion error:', error);
+        throw error;
+      }
+
+      console.log('Client created successfully:', data);
 
       toast({
         title: "Success",
@@ -50,9 +67,10 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: Crea
       onClientCreated();
       onOpenChange(false);
     } catch (error: any) {
+      console.error('Error creating client:', error);
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to create client",
         variant: "destructive",
       });
     } finally {
@@ -72,7 +90,7 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: Crea
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="name">Full Name</Label>
+            <Label htmlFor="name">Full Name *</Label>
             <Input
               id="name"
               value={formData.name}
@@ -83,7 +101,7 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: Crea
           </div>
 
           <div>
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Email *</Label>
             <Input
               id="email"
               type="email"
@@ -95,7 +113,7 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: Crea
           </div>
 
           <div>
-            <Label htmlFor="phone">Phone (Optional)</Label>
+            <Label htmlFor="phone">Phone</Label>
             <Input
               id="phone"
               type="tel"
@@ -106,7 +124,7 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated }: Crea
           </div>
 
           <div>
-            <Label htmlFor="address">Address (Optional)</Label>
+            <Label htmlFor="address">Address</Label>
             <Textarea
               id="address"
               value={formData.address}

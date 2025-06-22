@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,7 @@ export const JobsTab = () => {
   const { toast } = useToast();
 
   const fetchJobs = async () => {
+    console.log('Fetching jobs...');
     try {
       const { data, error } = await supabase
         .from('jobs')
@@ -44,9 +46,15 @@ export const JobsTab = () => {
         `)
         .order('scheduled_date', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching jobs:', error);
+        throw error;
+      }
+      
+      console.log('Jobs fetched successfully:', data);
       setJobs(data || []);
     } catch (error: any) {
+      console.error('Failed to fetch jobs:', error);
       toast({
         title: "Error",
         description: "Failed to fetch jobs",
@@ -62,6 +70,7 @@ export const JobsTab = () => {
   }, []);
 
   const generatePaymentLink = async (jobId: string) => {
+    console.log('Generating payment link for job:', jobId);
     setGeneratingLinks(prev => new Set(prev).add(jobId));
     
     try {
@@ -69,7 +78,12 @@ export const JobsTab = () => {
         body: { jobId }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error generating payment link:', error);
+        throw error;
+      }
+
+      console.log('Payment link generated successfully:', data);
 
       toast({
         title: "Success",
@@ -79,6 +93,7 @@ export const JobsTab = () => {
       // Refresh jobs to get the updated stripe_checkout_url
       await fetchJobs();
     } catch (error: any) {
+      console.error('Failed to generate payment link:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to generate payment link",
@@ -94,6 +109,7 @@ export const JobsTab = () => {
   };
 
   const markAsPaid = async (job: Job) => {
+    console.log('Marking job as paid:', job.id);
     setMarkingAsPaid(prev => new Set(prev).add(job.id));
     
     try {
@@ -103,21 +119,33 @@ export const JobsTab = () => {
         .update({ status: 'paid' })
         .eq('id', job.id);
 
-      if (jobUpdateError) throw jobUpdateError;
+      if (jobUpdateError) {
+        console.error('Error updating job status:', jobUpdateError);
+        throw jobUpdateError;
+      }
 
       // Create payment record
+      const paymentData = {
+        job_id: job.id,
+        amount: job.price,
+        payment_status: 'paid' as const,
+        paid_at: new Date().toISOString(),
+        card_saved: false,
+        payment_method: 'manual'
+      };
+
+      console.log('Creating payment record:', paymentData);
+
       const { error: paymentError } = await supabase
         .from('payments')
-        .insert({
-          job_id: job.id,
-          amount: job.price,
-          payment_status: 'paid',
-          paid_at: new Date().toISOString(),
-          card_saved: false,
-          payment_method: 'manual'
-        });
+        .insert(paymentData);
 
-      if (paymentError) throw paymentError;
+      if (paymentError) {
+        console.error('Error creating payment record:', paymentError);
+        throw paymentError;
+      }
+
+      console.log('Job marked as paid successfully');
 
       toast({
         title: "Success",
@@ -127,6 +155,7 @@ export const JobsTab = () => {
       // Refresh jobs to get the updated status
       await fetchJobs();
     } catch (error: any) {
+      console.error('Failed to mark job as paid:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to mark job as paid",
@@ -149,6 +178,7 @@ export const JobsTab = () => {
         description: "Payment link copied to clipboard!",
       });
     } catch (error) {
+      console.error('Failed to copy link:', error);
       toast({
         title: "Error",
         description: "Failed to copy link",
