@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { JobsTab } from "./JobsTab";
 import { ClientsTab } from "./ClientsTab";
 import { PaymentsTab } from "./PaymentsTab";
+import { RevenueTab } from "./RevenueTab";
 import { LogOut, Receipt } from "lucide-react";
 
 interface DashboardProps {
@@ -49,10 +50,11 @@ export const Dashboard = ({ session }: DashboardProps) => {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto p-4">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsList className="grid w-full grid-cols-4 max-w-lg">
             <TabsTrigger value="jobs">Jobs</TabsTrigger>
             <TabsTrigger value="clients">Clients</TabsTrigger>
             <TabsTrigger value="payments">Payments</TabsTrigger>
+            <TabsTrigger value="revenue">Revenue</TabsTrigger>
           </TabsList>
 
           <TabsContent value="jobs">
@@ -65,6 +67,10 @@ export const Dashboard = ({ session }: DashboardProps) => {
 
           <TabsContent value="payments">
             <PaymentsTab />
+          </TabsContent>
+
+          <TabsContent value="revenue">
+            <RevenueTab />
           </TabsContent>
         </Tabs>
       </main>
