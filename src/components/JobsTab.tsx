@@ -1,9 +1,8 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ExternalLink, CheckCircle, Clock, XCircle } from "lucide-react";
+import { Plus, ExternalLink, CheckCircle, Clock, XCircle, Link } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateJobDialog } from "./CreateJobDialog";
@@ -28,6 +27,7 @@ export const JobsTab = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'completed'>('all');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [generatingLinks, setGeneratingLinks] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   const fetchJobs = async () => {
@@ -61,11 +61,51 @@ export const JobsTab = () => {
   }, []);
 
   const generatePaymentLink = async (jobId: string) => {
-    // TODO: Implement Stripe checkout session creation
-    toast({
-      title: "Coming Soon",
-      description: "Payment link generation will be implemented with Stripe integration",
-    });
+    setGeneratingLinks(prev => new Set(prev).add(jobId));
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout', {
+        body: { jobId }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Payment link generated successfully!",
+      });
+
+      // Refresh jobs to get the updated stripe_checkout_url
+      await fetchJobs();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate payment link",
+        variant: "destructive",
+      });
+    } finally {
+      setGeneratingLinks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(jobId);
+        return newSet;
+      });
+    }
+  };
+
+  const copyPaymentLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: "Success",
+        description: "Payment link copied to clipboard!",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to copy link",
+        variant: "destructive",
+      });
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -166,22 +206,32 @@ export const JobsTab = () => {
               </div>
               <div className="flex gap-2">
                 {job.stripe_checkout_url ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => window.open(job.stripe_checkout_url!, '_blank')}
-                    className="flex-1"
-                  >
-                    <ExternalLink className="w-4 h-4 mr-1" />
-                    View Link
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(job.stripe_checkout_url!, '_blank')}
+                      className="flex-1"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-1" />
+                      Open Link
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => copyPaymentLink(job.stripe_checkout_url!)}
+                    >
+                      <Link className="w-4 h-4" />
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     size="sm"
                     onClick={() => generatePaymentLink(job.id)}
+                    disabled={generatingLinks.has(job.id)}
                     className="flex-1 bg-blue-600 hover:bg-blue-700"
                   >
-                    Generate Link
+                    {generatingLinks.has(job.id) ? "Generating..." : "Generate Link"}
                   </Button>
                 )}
               </div>
