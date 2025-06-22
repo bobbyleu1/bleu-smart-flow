@@ -1,9 +1,8 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ExternalLink, CheckCircle, Clock, XCircle, Link, DollarSign, RotateCcw } from "lucide-react";
+import { Plus, ExternalLink, CheckCircle, Clock, XCircle, Link, DollarSign, RotateCcw, Building } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateJobDialog } from "./CreateJobDialog";
@@ -23,8 +22,13 @@ interface Job {
   };
 }
 
+interface UserProfile {
+  company_id: string | null;
+}
+
 export const JobsTab = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'completed'>('all');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -32,18 +36,59 @@ export const JobsTab = () => {
   const [markingAsPaid, setMarkingAsPaid] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
+  const fetchUserProfile = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        throw error;
+      }
+
+      setUserProfile(profileData);
+      return profileData;
+    } catch (error: any) {
+      console.error('Failed to fetch user profile:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load user profile",
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
   const fetchJobs = async () => {
     console.log('Fetching jobs...');
     try {
+      const profile = userProfile || await fetchUserProfile();
+      
+      if (!profile?.company_id) {
+        console.log('No company_id found, skipping job fetch');
+        setJobs([]);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('jobs')
         .select(`
           *,
-          clients (
+          clients!inner (
             name,
             email
           )
         `)
+        .eq('clients.company_id', profile.company_id)
         .order('scheduled_date', { ascending: false });
 
       if (error) {
@@ -66,7 +111,16 @@ export const JobsTab = () => {
   };
 
   useEffect(() => {
-    fetchJobs();
+    const initialize = async () => {
+      const profile = await fetchUserProfile();
+      if (profile) {
+        await fetchJobs();
+      } else {
+        setLoading(false);
+      }
+    };
+    
+    initialize();
   }, []);
 
   const generatePaymentLink = async (jobId: string) => {
@@ -219,6 +273,30 @@ export const JobsTab = () => {
     return <div className="flex justify-center p-8">Loading jobs...</div>;
   }
 
+  // Show company ID required message if user doesn't have one
+  if (!userProfile?.company_id) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Jobs</h2>
+          <p className="text-gray-600">Manage your service jobs and payments</p>
+        </div>
+        <Card className="p-12 text-center">
+          <CardContent>
+            <Building className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Company ID Required</h3>
+            <p className="text-gray-600 mb-4">
+              You need to generate a Company ID before you can create jobs.
+            </p>
+            <p className="text-sm text-gray-500">
+              Go to the Account tab to generate your Company ID first.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -342,7 +420,7 @@ export const JobsTab = () => {
         ))}
       </div>
 
-      {filteredJobs.length === 0 && (
+      {filteredJobs.length === 0 && userProfile?.company_id && (
         <Card className="p-12 text-center">
           <CardContent>
             <p className="text-gray-500 mb-4">No jobs found</p>
@@ -358,6 +436,7 @@ export const JobsTab = () => {
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
         onJobCreated={fetchJobs}
+        userProfile={userProfile}
       />
     </div>
   );

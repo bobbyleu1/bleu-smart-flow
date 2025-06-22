@@ -1,8 +1,7 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Clock, XCircle, DollarSign } from "lucide-react";
+import { CheckCircle, Clock, XCircle, DollarSign, Building } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -20,8 +19,13 @@ interface Payment {
   };
 }
 
+interface UserProfile {
+  company_id: string | null;
+}
+
 export const PaymentsTab = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalRevenue: 0,
@@ -30,19 +34,61 @@ export const PaymentsTab = () => {
   });
   const { toast } = useToast();
 
+  const fetchUserProfile = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        throw error;
+      }
+
+      setUserProfile(profileData);
+      return profileData;
+    } catch (error: any) {
+      console.error('Failed to fetch user profile:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load user profile",
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
   const fetchPayments = async () => {
     try {
+      const profile = userProfile || await fetchUserProfile();
+      
+      if (!profile?.company_id) {
+        console.log('No company_id found, skipping payments fetch');
+        setPayments([]);
+        setStats({ totalRevenue: 0, pendingAmount: 0, paidThisMonth: 0 });
+        return;
+      }
+
       const { data, error } = await supabase
         .from('payments')
         .select(`
           *,
-          jobs (
+          jobs!inner (
             title,
-            clients (
+            clients!inner (
               name
             )
           )
         `)
+        .eq('jobs.clients.company_id', profile.company_id)
         .order('paid_at', { ascending: false, nullsFirst: false });
 
       if (error) throw error;
@@ -78,7 +124,16 @@ export const PaymentsTab = () => {
   };
 
   useEffect(() => {
-    fetchPayments();
+    const initialize = async () => {
+      const profile = await fetchUserProfile();
+      if (profile) {
+        await fetchPayments();
+      } else {
+        setLoading(false);
+      }
+    };
+    
+    initialize();
   }, []);
 
   const getStatusIcon = (status: string) => {
@@ -109,6 +164,30 @@ export const PaymentsTab = () => {
 
   if (loading) {
     return <div className="flex justify-center p-8">Loading payments...</div>;
+  }
+
+  // Show company ID required message if user doesn't have one
+  if (!userProfile?.company_id) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Payments</h2>
+          <p className="text-gray-600">Track your payment history and revenue</p>
+        </div>
+        <Card className="p-12 text-center">
+          <CardContent>
+            <Building className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Company ID Required</h3>
+            <p className="text-gray-600 mb-4">
+              You need to generate a Company ID before you can view payments.
+            </p>
+            <p className="text-sm text-gray-500">
+              Go to the Account tab to generate your Company ID first.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -204,7 +283,7 @@ export const PaymentsTab = () => {
         ))}
       </div>
 
-      {payments.length === 0 && (
+      {payments.length === 0 && userProfile?.company_id && (
         <Card className="p-12 text-center">
           <CardContent>
             <p className="text-gray-500">No payments recorded yet</p>

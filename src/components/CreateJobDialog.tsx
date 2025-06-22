@@ -16,13 +16,18 @@ interface Client {
   email: string;
 }
 
+interface UserProfile {
+  company_id: string | null;
+}
+
 interface CreateJobDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onJobCreated: () => void;
+  userProfile: UserProfile | null;
 }
 
-export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobDialogProps) => {
+export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile }: CreateJobDialogProps) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingClients, setLoadingClients] = useState(false);
@@ -37,12 +42,19 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
   const { toast } = useToast();
 
   const fetchClients = async () => {
+    if (!userProfile?.company_id) {
+      console.log('No company_id available for fetching clients');
+      setClients([]);
+      return;
+    }
+
     console.log('Fetching clients for job creation...');
     setLoadingClients(true);
     try {
       const { data, error } = await supabase
         .from('clients')
         .select('id, name, email')
+        .eq('company_id', userProfile.company_id)
         .order('name', { ascending: true });
 
       if (error) {
@@ -65,13 +77,23 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
   };
 
   useEffect(() => {
-    if (open) {
+    if (open && userProfile?.company_id) {
       fetchClients();
     }
-  }, [open]);
+  }, [open, userProfile?.company_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!userProfile?.company_id) {
+      toast({
+        title: "Error",
+        description: "Company ID is required to create jobs",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
 
     console.log('Attempting to create job with data:', formData);
@@ -128,6 +150,11 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated }: CreateJobD
       setLoading(false);
     }
   };
+
+  // Don't render the dialog if there's no company_id
+  if (!userProfile?.company_id) {
+    return null;
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
