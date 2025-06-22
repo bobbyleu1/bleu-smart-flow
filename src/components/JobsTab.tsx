@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ExternalLink, CheckCircle, Clock, XCircle, Link, DollarSign } from "lucide-react";
+import { Plus, ExternalLink, CheckCircle, Clock, XCircle, Link, DollarSign, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateJobDialog } from "./CreateJobDialog";
@@ -228,7 +228,12 @@ export const JobsTab = () => {
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">
                 <div>
-                  <CardTitle className="text-lg">{job.title}</CardTitle>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    {job.title}
+                    {job.is_recurring && (
+                      <RotateCcw className="w-4 h-4 text-blue-600" title="Recurring job" />
+                    )}
+                  </CardTitle>
                   <CardDescription className="flex items-center gap-2 mt-1">
                     {job.clients.name}
                     {job.is_recurring && (
