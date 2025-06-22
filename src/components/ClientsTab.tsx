@@ -6,6 +6,7 @@ import { Plus, Phone, Mail, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateClientDialog } from "./CreateClientDialog";
+import { ClientProfile } from "./ClientProfile";
 
 interface Client {
   id: string;
@@ -19,6 +20,7 @@ export const ClientsTab = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchClients = async () => {
@@ -45,6 +47,15 @@ export const ClientsTab = () => {
     fetchClients();
   }, []);
 
+  if (selectedClientId) {
+    return (
+      <ClientProfile
+        clientId={selectedClientId}
+        onBack={() => setSelectedClientId(null)}
+      />
+    );
+  }
+
   if (loading) {
     return <div className="flex justify-center p-8">Loading clients...</div>;
   }
@@ -68,7 +79,11 @@ export const ClientsTab = () => {
       {/* Clients Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {clients.map((client) => (
-          <Card key={client.id} className="hover:shadow-md transition-shadow">
+          <Card 
+            key={client.id} 
+            className="hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => setSelectedClientId(client.id)}
+          >
             <CardHeader>
               <CardTitle className="text-lg">{client.name}</CardTitle>
             </CardHeader>
