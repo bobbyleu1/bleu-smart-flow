@@ -1,8 +1,9 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ExternalLink, CheckCircle, Clock, XCircle, Link } from "lucide-react";
+import { Plus, ExternalLink, CheckCircle, Clock, XCircle, Link, DollarSign } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateJobDialog } from "./CreateJobDialog";
@@ -28,6 +29,7 @@ export const JobsTab = () => {
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'completed'>('all');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [generatingLinks, setGeneratingLinks] = useState<Set<string>>(new Set());
+  const [markingAsPaid, setMarkingAsPaid] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   const fetchJobs = async () => {
@@ -87,6 +89,54 @@ export const JobsTab = () => {
       setGeneratingLinks(prev => {
         const newSet = new Set(prev);
         newSet.delete(jobId);
+        return newSet;
+      });
+    }
+  };
+
+  const markAsPaid = async (job: Job) => {
+    setMarkingAsPaid(prev => new Set(prev).add(job.id));
+    
+    try {
+      // Update job status to paid
+      const { error: jobUpdateError } = await supabase
+        .from('jobs')
+        .update({ status: 'paid' })
+        .eq('id', job.id);
+
+      if (jobUpdateError) throw jobUpdateError;
+
+      // Create payment record
+      const { error: paymentError } = await supabase
+        .from('payments')
+        .insert({
+          job_id: job.id,
+          amount: job.price,
+          payment_status: 'paid',
+          paid_at: new Date().toISOString(),
+          card_saved: false,
+          payment_method: 'manual'
+        });
+
+      if (paymentError) throw paymentError;
+
+      toast({
+        title: "Success",
+        description: "Job marked as paid successfully!",
+      });
+
+      // Refresh jobs to get the updated status
+      await fetchJobs();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to mark job as paid",
+        variant: "destructive",
+      });
+    } finally {
+      setMarkingAsPaid(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(job.id);
         return newSet;
       });
     }
@@ -204,34 +254,50 @@ export const JobsTab = () => {
               <div className="text-sm text-gray-500">
                 Scheduled: {new Date(job.scheduled_date).toLocaleDateString()}
               </div>
-              <div className="flex gap-2">
-                {job.stripe_checkout_url ? (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => window.open(job.stripe_checkout_url!, '_blank')}
-                      className="flex-1"
-                    >
-                      <ExternalLink className="w-4 h-4 mr-1" />
-                      Open Link
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => copyPaymentLink(job.stripe_checkout_url!)}
-                    >
-                      <Link className="w-4 h-4" />
-                    </Button>
-                  </>
-                ) : (
+              <div className="space-y-2">
+                {job.status !== 'paid' && (
+                  <div className="flex gap-2">
+                    {job.stripe_checkout_url ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => window.open(job.stripe_checkout_url!, '_blank')}
+                          className="flex-1"
+                        >
+                          <ExternalLink className="w-4 h-4 mr-1" />
+                          Open Link
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => copyPaymentLink(job.stripe_checkout_url!)}
+                        >
+                          <Link className="w-4 h-4" />
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => generatePaymentLink(job.id)}
+                        disabled={generatingLinks.has(job.id)}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700"
+                      >
+                        {generatingLinks.has(job.id) ? "Generating..." : "Generate Link"}
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {job.status !== 'paid' && (
                   <Button
                     size="sm"
-                    onClick={() => generatePaymentLink(job.id)}
-                    disabled={generatingLinks.has(job.id)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                    variant="outline"
+                    onClick={() => markAsPaid(job)}
+                    disabled={markingAsPaid.has(job.id)}
+                    className="w-full border-green-300 text-green-700 hover:bg-green-50"
                   >
-                    {generatingLinks.has(job.id) ? "Generating..." : "Generate Link"}
+                    <DollarSign className="w-4 h-4 mr-1" />
+                    {markingAsPaid.has(job.id) ? "Marking as Paid..." : "Mark as Paid"}
                   </Button>
                 )}
               </div>
