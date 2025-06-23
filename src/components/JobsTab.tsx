@@ -44,28 +44,39 @@ export const JobsTab = () => {
         throw new Error('No authenticated user found');
       }
 
+      // Try to get existing profile
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('company_id')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code === 'PGRST116') {
-        // Profile doesn't exist, create it using the database function
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        throw error;
+      }
+
+      if (!profileData) {
+        // Profile doesn't exist, create it manually
         console.log('Profile not found, creating new profile...');
         
-        const { data: newCompanyId, error: createError } = await supabase
-          .rpc('ensure_user_profile', {
-            user_id: user.id,
-            user_email: user.email || ''
-          });
+        const newCompanyId = crypto.randomUUID();
+        const newProfile = {
+          id: user.id,
+          email: user.email || '',
+          company_id: newCompanyId,
+          role: 'invoice_owner'
+        };
 
-        if (createError) {
-          console.error('Error creating profile:', createError);
-          throw createError;
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert([newProfile]);
+
+        if (insertError) {
+          console.error('Error creating profile:', insertError);
+          throw insertError;
         }
 
-        // Return the new profile data
         setUserProfile({ company_id: newCompanyId });
         
         toast({
@@ -74,9 +85,6 @@ export const JobsTab = () => {
         });
         
         return { company_id: newCompanyId };
-      } else if (error) {
-        console.error('Error fetching user profile:', error);
-        throw error;
       }
 
       setUserProfile(profileData);

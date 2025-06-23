@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -33,38 +32,37 @@ export const ProfileTab = () => {
 
       console.log('Authenticated user found:', user.id);
 
-      // Get existing profile
+      // First try to get existing profile
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (profileError && profileError.code === 'PGRST116') {
-        // Profile doesn't exist, create it using the database function
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+        throw profileError;
+      }
+
+      if (!profileData) {
+        // Profile doesn't exist, create it manually
         console.log('Profile not found, creating new profile...');
         
-        const { data: newCompanyId, error: createError } = await supabase
-          .rpc('ensure_user_profile', {
-            user_id: user.id,
-            user_email: user.email || ''
-          });
+        const newCompanyId = crypto.randomUUID();
+        const newProfile = {
+          id: user.id,
+          email: user.email || '',
+          company_id: newCompanyId,
+          role: 'invoice_owner'
+        };
 
-        if (createError) {
-          console.error('Error creating profile:', createError);
-          throw createError;
-        }
-
-        // Fetch the newly created profile
-        const { data: newProfile, error: fetchError } = await supabase
+        const { error: insertError } = await supabase
           .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
+          .insert([newProfile]);
 
-        if (fetchError) {
-          console.error('Error fetching new profile:', fetchError);
-          throw fetchError;
+        if (insertError) {
+          console.error('Error creating profile:', insertError);
+          throw insertError;
         }
 
         console.log('New profile created successfully:', newProfile);
@@ -76,9 +74,6 @@ export const ProfileTab = () => {
         });
         
         return;
-      } else if (profileError) {
-        console.error('Error fetching profile:', profileError);
-        throw profileError;
       }
 
       console.log('Profile loaded successfully:', profileData);
