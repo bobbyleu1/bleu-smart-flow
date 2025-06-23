@@ -4,7 +4,7 @@ import Stripe from "https://esm.sh/stripe@14.21.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://preview--bleu-smart-flow.lovable.app",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, authorization, x-client-info, apikey",
   "Access-Control-Max-Age": "86400",
@@ -13,7 +13,6 @@ const corsHeaders = {
 serve(async (req) => {
   console.log("Create checkout function called with method:", req.method);
   console.log("Request origin:", req.headers.get("origin"));
-  console.log("Request headers:", Object.fromEntries(req.headers.entries()));
 
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -34,7 +33,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           error: "Stripe configuration missing. Please add your Stripe secret key to edge function secrets.",
-          details: "Go to Supabase Dashboard → Edge Functions → Settings → Secrets and add STRIPE_SECRET_KEY"
+          details: "Go to Supabase Dashboard → Edge Functions → Settings and add STRIPE_SECRET_KEY"
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
