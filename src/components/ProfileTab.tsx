@@ -41,7 +41,7 @@ export const ProfileTab = () => {
         throw profileError;
       }
 
-      // If no profile exists, create one
+      // If no profile exists, create one (this shouldn't happen often now with auto-creation on sign-up)
       if (!profileData) {
         console.log('Creating new profile for user:', user.id);
         const { data: newProfile, error: insertError } = await supabase
@@ -50,7 +50,7 @@ export const ProfileTab = () => {
             {
               id: user.id,
               email: user.email,
-              company_id: null
+              company_id: null // Will be null if not created during sign-up
             }
           ])
           .select()
