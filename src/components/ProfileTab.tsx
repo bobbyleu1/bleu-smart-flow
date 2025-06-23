@@ -23,8 +23,11 @@ export const ProfileTab = () => {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
+        console.error('No authenticated user found');
         throw new Error('No authenticated user found');
       }
+
+      console.log('Authenticated user found:', user.id);
 
       // Try to get existing profile
       const { data: profileData, error: profileError } = await supabase
@@ -58,8 +61,10 @@ export const ProfileTab = () => {
           throw insertError;
         }
 
+        console.log('New profile created:', newProfile);
         setProfile(newProfile);
       } else {
+        console.log('Existing profile found:', profileData);
         setProfile(profileData);
       }
 
@@ -68,7 +73,7 @@ export const ProfileTab = () => {
       console.error('Failed to fetch profile:', error);
       toast({
         title: "Error",
-        description: "Failed to load profile data",
+        description: error.message || "Failed to load profile data",
         variant: "destructive",
       });
     } finally {
@@ -82,6 +87,28 @@ export const ProfileTab = () => {
 
   if (loading) {
     return <div className="flex justify-center p-8">Loading profile...</div>;
+  }
+
+  if (!profile) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Account Settings</h2>
+          <p className="text-gray-600">Manage your account and company settings</p>
+        </div>
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-red-600 mb-4">Failed to load user profile.</p>
+            <button 
+              onClick={fetchProfile}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Retry
+            </button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (

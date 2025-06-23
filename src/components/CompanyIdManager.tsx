@@ -21,6 +21,11 @@ export const CompanyIdManager = ({ userProfile, onCompanyIdGenerated }: CompanyI
   const generateCompanyId = async () => {
     if (!userProfile) {
       console.error('No user profile available');
+      toast({
+        title: "Error",
+        description: "User profile not available. Please refresh the page.",
+        variant: "destructive",
+      });
       return;
     }
     
