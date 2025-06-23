@@ -15,7 +15,10 @@ serve(async (req) => {
   }
 
   try {
+    console.log("Create checkout function started");
+
     const { jobId } = await req.json();
+    console.log("Received job ID:", jobId);
 
     if (!jobId) {
       throw new Error("Job ID is required");
@@ -28,6 +31,7 @@ serve(async (req) => {
     );
 
     // Get job details
+    console.log("Fetching job details for ID:", jobId);
     const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
       .select(`
@@ -40,18 +44,35 @@ serve(async (req) => {
       .eq('id', jobId)
       .single();
 
-    if (jobError || !job) {
+    if (jobError) {
+      console.error("Error fetching job:", jobError);
+      throw new Error(`Failed to fetch job: ${jobError.message}`);
+    }
+
+    if (!job) {
+      console.error("Job not found for ID:", jobId);
       throw new Error("Job not found");
     }
 
+    console.log("Job details fetched:", { id: job.id, title: job.title, price: job.price });
+
+    // Check for Stripe secret key
+    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeSecretKey) {
+      console.error("STRIPE_SECRET_KEY not found in environment");
+      throw new Error("Stripe configuration missing. Please add your Stripe secret key to edge function secrets.");
+    }
+
     // Initialize Stripe
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
+    const stripe = new Stripe(stripeSecretKey, {
       apiVersion: "2023-10-16",
     });
 
+    console.log("Creating Stripe checkout session");
+
     // Calculate platform fee (5% of job price)
     const jobPriceCents = Math.round(job.price * 100);
-    const platformFeeCents = Math.round(jobPriceCents * 0.05);
+    console.log("Job price in cents:", jobPriceCents);
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
@@ -76,10 +97,9 @@ serve(async (req) => {
       metadata: {
         job_id: jobId,
       },
-      payment_intent_data: {
-        application_fee_amount: platformFeeCents,
-      },
     });
+
+    console.log("Stripe session created:", session.id);
 
     // Update job with stripe checkout URL
     const { error: updateError } = await supabaseAdmin
@@ -88,8 +108,11 @@ serve(async (req) => {
       .eq('id', jobId);
 
     if (updateError) {
-      throw new Error("Failed to update job with payment link");
+      console.error("Error updating job with payment link:", updateError);
+      throw new Error(`Failed to update job with payment link: ${updateError.message}`);
     }
+
+    console.log("Job updated with checkout URL");
 
     return new Response(
       JSON.stringify({ 
@@ -102,9 +125,12 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error("Error creating checkout session:", error);
+    console.error("Error in create-checkout function:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        details: "Check the function logs for more information"
+      }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
