@@ -38,6 +38,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
     description: "",
     scheduled_date: "",
     is_recurring: false,
+    frequency: "weekly",
   });
   const { toast } = useToast();
 
@@ -106,6 +107,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
         description: formData.description.trim() || null,
         scheduled_date: formData.scheduled_date,
         is_recurring: formData.is_recurring,
+        frequency: formData.is_recurring ? formData.frequency : null,
         status: 'pending' as const
       };
 
@@ -135,6 +137,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
         description: "",
         scheduled_date: "",
         is_recurring: false,
+        frequency: "weekly",
       });
 
       onJobCreated();
@@ -247,6 +250,26 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
             />
             <Label htmlFor="is_recurring">Recurring Job</Label>
           </div>
+
+          {formData.is_recurring && (
+            <div>
+              <Label htmlFor="frequency">Frequency *</Label>
+              <Select
+                value={formData.frequency}
+                onValueChange={(value) => setFormData({ ...formData, frequency: value })}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select frequency" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="bi-weekly">Bi-weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="flex gap-2 pt-4">
             <Button

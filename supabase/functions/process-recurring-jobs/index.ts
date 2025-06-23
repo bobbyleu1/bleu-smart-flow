@@ -51,10 +51,25 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Duplicate each recurring job
+    // Duplicate each recurring job with appropriate frequency
     const newJobs = recurringJobs.map(job => {
       const nextScheduledDate = new Date(job.scheduled_date)
-      nextScheduledDate.setDate(nextScheduledDate.getDate() + 7) // Weekly recurrence
+      
+      // Calculate next date based on frequency
+      switch (job.frequency) {
+        case 'weekly':
+          nextScheduledDate.setDate(nextScheduledDate.getDate() + 7)
+          break
+        case 'bi-weekly':
+          nextScheduledDate.setDate(nextScheduledDate.getDate() + 14)
+          break
+        case 'monthly':
+          nextScheduledDate.setMonth(nextScheduledDate.getMonth() + 1)
+          break
+        default:
+          // Default to weekly if frequency is not set
+          nextScheduledDate.setDate(nextScheduledDate.getDate() + 7)
+      }
 
       return {
         title: job.title,
@@ -62,6 +77,7 @@ Deno.serve(async (req) => {
         description: job.description,
         scheduled_date: nextScheduledDate.toISOString(),
         is_recurring: true,
+        frequency: job.frequency || 'weekly',
         status: 'pending',
         client_id: job.client_id,
         stripe_checkout_url: null, // Reset checkout URL for new job
