@@ -50,7 +50,31 @@ export const JobsTab = () => {
         .eq('id', user.id)
         .single();
 
-      if (error) {
+      if (error && error.code === 'PGRST116') {
+        // Profile doesn't exist, create it using the database function
+        console.log('Profile not found, creating new profile...');
+        
+        const { data: newCompanyId, error: createError } = await supabase
+          .rpc('ensure_user_profile', {
+            user_id: user.id,
+            user_email: user.email || ''
+          });
+
+        if (createError) {
+          console.error('Error creating profile:', createError);
+          throw createError;
+        }
+
+        // Return the new profile data
+        setUserProfile({ company_id: newCompanyId });
+        
+        toast({
+          title: "Profile Created",
+          description: "Your profile has been set up successfully!",
+        });
+        
+        return { company_id: newCompanyId };
+      } else if (error) {
         console.error('Error fetching user profile:', error);
         throw error;
       }
