@@ -17,6 +17,22 @@ serve(async (req) => {
   try {
     console.log("Create checkout function started");
 
+    // Check for Stripe secret key first
+    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeSecretKey) {
+      console.error("STRIPE_SECRET_KEY not found in environment");
+      return new Response(
+        JSON.stringify({ 
+          error: "Stripe configuration missing. Please add your Stripe secret key to edge function secrets.",
+          details: "Go to Supabase Dashboard → Edge Functions → Settings → Secrets and add STRIPE_SECRET_KEY"
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        }
+      );
+    }
+
     const { jobId } = await req.json();
     console.log("Received job ID:", jobId);
 
@@ -55,13 +71,6 @@ serve(async (req) => {
     }
 
     console.log("Job details fetched:", { id: job.id, title: job.title, price: job.price });
-
-    // Check for Stripe secret key
-    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeSecretKey) {
-      console.error("STRIPE_SECRET_KEY not found in environment");
-      throw new Error("Stripe configuration missing. Please add your Stripe secret key to edge function secrets.");
-    }
 
     // Initialize Stripe
     const stripe = new Stripe(stripeSecretKey, {
