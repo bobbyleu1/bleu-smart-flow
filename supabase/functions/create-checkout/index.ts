@@ -9,8 +9,11 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  console.log("Create checkout function called with method:", req.method);
+
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
+    console.log("Handling CORS preflight request");
     return new Response(null, { headers: corsHeaders });
   }
 
@@ -33,11 +36,21 @@ serve(async (req) => {
       );
     }
 
-    const { jobId } = await req.json();
+    console.log("Stripe secret key found, proceeding with request");
+
+    const requestBody = await req.json();
+    const { jobId } = requestBody;
     console.log("Received job ID:", jobId);
 
     if (!jobId) {
-      throw new Error("Job ID is required");
+      console.error("Job ID is required but not provided");
+      return new Response(
+        JSON.stringify({ error: "Job ID is required" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        }
+      );
     }
 
     // Initialize Supabase client with service role key
@@ -62,12 +75,24 @@ serve(async (req) => {
 
     if (jobError) {
       console.error("Error fetching job:", jobError);
-      throw new Error(`Failed to fetch job: ${jobError.message}`);
+      return new Response(
+        JSON.stringify({ error: `Failed to fetch job: ${jobError.message}` }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        }
+      );
     }
 
     if (!job) {
       console.error("Job not found for ID:", jobId);
-      throw new Error("Job not found");
+      return new Response(
+        JSON.stringify({ error: "Job not found" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 404,
+        }
+      );
     }
 
     console.log("Job details fetched:", { id: job.id, title: job.title, price: job.price });
@@ -118,7 +143,13 @@ serve(async (req) => {
 
     if (updateError) {
       console.error("Error updating job with payment link:", updateError);
-      throw new Error(`Failed to update job with payment link: ${updateError.message}`);
+      return new Response(
+        JSON.stringify({ error: `Failed to update job with payment link: ${updateError.message}` }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        }
+      );
     }
 
     console.log("Job updated with checkout URL");
@@ -137,7 +168,7 @@ serve(async (req) => {
     console.error("Error in create-checkout function:", error);
     return new Response(
       JSON.stringify({ 
-        error: error.message,
+        error: error.message || "Internal server error",
         details: "Check the function logs for more information"
       }),
       {
