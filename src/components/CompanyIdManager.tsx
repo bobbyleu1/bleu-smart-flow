@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Plus } from "lucide-react";
+import { Copy, Plus, RefreshCw } from "lucide-react";
 
 interface CompanyIdManagerProps {
   userProfile: {
@@ -53,7 +53,7 @@ export const CompanyIdManager = ({ userProfile, onCompanyIdGenerated }: CompanyI
       
       toast({
         title: "Success",
-        description: "Company ID created successfully!",
+        description: userProfile.company_id ? "Company ID regenerated successfully!" : "Company ID created successfully!",
       });
 
       // Refresh the profile data
@@ -117,11 +117,22 @@ export const CompanyIdManager = ({ userProfile, onCompanyIdGenerated }: CompanyI
             <p className="text-sm text-gray-600">
               This ID isolates your company's data and allows you to invite teammates.
             </p>
+            <Button 
+              onClick={generateCompanyId}
+              disabled={generating}
+              variant="outline"
+              size="sm"
+              className="text-gray-600"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              {generating ? "Regenerating..." : "Regenerate Company ID"}
+            </Button>
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm text-gray-600">
-              Generate a unique Company ID to isolate your data and enable team collaboration.
+            <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
+              <strong>Legacy Account:</strong> Your account was created before automatic company setup. 
+              Please generate a Company ID to access all features.
             </p>
             <Button 
               onClick={generateCompanyId}

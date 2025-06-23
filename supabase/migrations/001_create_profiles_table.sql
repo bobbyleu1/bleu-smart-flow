@@ -28,6 +28,15 @@ CREATE POLICY "Users can insert own profile" ON public.profiles
 CREATE POLICY "Users can update own profile" ON public.profiles
   FOR UPDATE USING (auth.uid() = id);
 
+-- Create policy to allow users to read profiles with same company_id
+CREATE POLICY "Users can read team profiles" ON public.profiles
+  FOR SELECT USING (
+    company_id IN (
+      SELECT company_id FROM public.profiles 
+      WHERE id = auth.uid()
+    )
+  );
+
 -- Create an index on company_id for better performance
 CREATE INDEX IF NOT EXISTS profiles_company_id_idx ON public.profiles(company_id);
 

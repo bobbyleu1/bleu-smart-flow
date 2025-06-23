@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -32,75 +33,25 @@ export const ProfileTab = () => {
 
       console.log('Authenticated user found:', user.id);
 
-      // Try to get existing profile with retries for new users
-      let profileData = null;
-      let attempts = 0;
-      const maxAttempts = 3;
-      
-      while (!profileData && attempts < maxAttempts) {
-        const { data, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
+      // Get existing profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
 
-        if (profileError && profileError.code !== 'PGRST116') {
-          console.error('Error fetching profile:', profileError);
-          throw profileError;
-        }
-
-        profileData = data;
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
         
-        if (!profileData && attempts < maxAttempts - 1) {
-          console.log(`Profile not found, waiting before retry ${attempts + 1}/${maxAttempts}`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+        if (profileError.code === 'PGRST116') {
+          // Profile doesn't exist, this shouldn't happen with the new trigger
+          // but we'll handle it as a fallback
+          console.log('Profile not found, this indicates the trigger may not be working');
+          setError('Profile not found. Please contact support.');
+          return;
         }
         
-        attempts++;
-      }
-
-      // If still no profile exists after retries, create one as fallback
-      if (!profileData) {
-        console.log('No profile found after retries, creating fallback profile for user:', user.id);
-        const newCompanyId = crypto.randomUUID();
-        
-        const { data: newProfile, error: insertError } = await supabase
-          .from('profiles')
-          .insert([
-            {
-              id: user.id,
-              email: user.email,
-              company_id: newCompanyId,
-              role: 'invoice_owner'
-            }
-          ])
-          .select()
-          .single();
-
-        if (insertError) {
-          console.error('Error creating fallback profile:', insertError);
-          
-          // One more attempt to fetch in case it was created elsewhere
-          const { data: finalAttempt } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-            
-          if (finalAttempt) {
-            profileData = finalAttempt;
-          } else {
-            throw insertError;
-          }
-        } else {
-          profileData = newProfile;
-          console.log('Fallback profile created with company_id:', newProfile);
-          
-          toast({
-            title: "Profile Setup Complete",
-            description: "Your profile and company have been set up successfully!",
-          });
-        }
+        throw profileError;
       }
 
       console.log('Profile loaded successfully:', profileData);
@@ -111,7 +62,7 @@ export const ProfileTab = () => {
       
       toast({
         title: "Profile Loading Issue",
-        description: "Could not load profile. Please try again or refresh the page.",
+        description: "Could not load profile. Please try refreshing the page.",
         variant: "destructive",
       });
     } finally {
@@ -140,7 +91,7 @@ export const ProfileTab = () => {
         </div>
         <Card>
           <CardContent className="p-6">
-            <p className="text-red-600 mb-4">Could not load profile. Please try again or refresh the page.</p>
+            <p className="text-red-600 mb-4">{error}</p>
             <button 
               onClick={fetchProfile}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -183,7 +134,7 @@ export const ProfileTab = () => {
         </CardContent>
       </Card>
 
-      {/* Company ID Manager */}
+      {/* Company ID Manager - only show Generate button for legacy users without company_id */}
       <CompanyIdManager 
         userProfile={profile}
         onCompanyIdGenerated={fetchProfile}

@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -23,54 +24,29 @@ export const Auth = () => {
     }
   }, []);
 
-  const createUserProfile = async (userId: string, userEmail: string) => {
-    console.log('Creating profile for user:', userId);
+  const handleInviteUser = async (userId: string, userEmail: string) => {
+    if (!inviteCompanyId) return;
     
-    const newCompanyId = inviteCompanyId || crypto.randomUUID();
-    const userRole = inviteCompanyId ? 'teammate' : 'invoice_owner';
+    console.log('Updating profile for invited user:', userId, 'to company:', inviteCompanyId);
     
-    console.log('Profile data:', { userId, userEmail, newCompanyId, userRole });
-
-    // Wait a moment to ensure the user is fully authenticated
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    const { data, error } = await supabase
+    // Wait a moment for the trigger to create the profile
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Update the user's profile to join the invite company
+    const { error } = await supabase
       .from('profiles')
-      .insert([
-        {
-          id: userId,
-          email: userEmail,
-          company_id: newCompanyId,
-          role: userRole
-        }
-      ])
-      .select()
-      .single();
+      .update({ 
+        company_id: inviteCompanyId,
+        role: 'teammate'
+      })
+      .eq('id', userId);
 
     if (error) {
-      console.error('Profile creation error:', error);
-      
-      // If it's a duplicate error, try to fetch existing profile
-      if (error.code === '23505') {
-        console.log('Profile already exists, fetching existing profile...');
-        const { data: existingProfile, error: fetchError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-          
-        if (fetchError) {
-          throw new Error('Failed to create or fetch user profile');
-        }
-        
-        return existingProfile;
-      }
-      
+      console.error('Error updating profile for invite:', error);
       throw error;
     }
 
-    console.log('Profile created successfully:', data);
-    return data;
+    console.log('Profile updated for invite successfully');
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -93,30 +69,27 @@ export const Auth = () => {
 
         console.log('Sign-up successful, user:', data.user?.id);
 
-        // Create profile if user was created successfully
-        if (data.user && !data.user.email_confirmed_at) {
+        // Handle invite users
+        if (data.user && inviteCompanyId) {
           try {
-            await createUserProfile(data.user.id, data.user.email || email);
+            await handleInviteUser(data.user.id, data.user.email || email);
             
             toast({
               title: "Account created!",
-              description: inviteCompanyId 
-                ? "Welcome to the team! Please check your email to verify your account."
-                : "Your company has been created! Please check your email to verify your account.",
+              description: "Welcome to the team! Please check your email to verify your account.",
             });
           } catch (profileError: any) {
-            console.error('Profile creation failed:', profileError);
+            console.error('Invite profile update failed:', profileError);
             toast({
               title: "Account Created",
-              description: "Your account was created but profile setup encountered an issue. Please refresh after email verification.",
+              description: "Your account was created but there was an issue joining the team. Please contact your team administrator.",
               variant: "destructive",
             });
           }
-        } else if (data.user && data.user.email_confirmed_at) {
-          // User is already confirmed, they might be signing in
+        } else if (data.user) {
           toast({
-            title: "Welcome!",
-            description: "You're now signed in.",
+            title: "Account created!",
+            description: "Your company has been created! Please check your email to verify your account.",
           });
         }
       } else {
