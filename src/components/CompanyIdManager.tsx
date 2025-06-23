@@ -62,7 +62,7 @@ export const CompanyIdManager = ({ userProfile, onCompanyIdGenerated }: CompanyI
       console.error('Failed to generate company ID:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create company ID",
+        description: error.message || "Failed to create company ID. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -133,8 +133,8 @@ export const CompanyIdManager = ({ userProfile, onCompanyIdGenerated }: CompanyI
               {generating ? "Generating..." : "Generate Company ID"}
             </Button>
             {!userProfile && (
-              <p className="text-sm text-red-600">
-                Unable to load user profile. Please refresh the page.
+              <p className="text-sm text-amber-600">
+                Loading profile data...
               </p>
             )}
           </div>

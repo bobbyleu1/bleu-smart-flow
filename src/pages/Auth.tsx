@@ -23,6 +23,56 @@ export const Auth = () => {
     }
   }, []);
 
+  const createUserProfile = async (userId: string, userEmail: string) => {
+    console.log('Creating profile for user:', userId);
+    
+    const newCompanyId = inviteCompanyId || crypto.randomUUID();
+    const userRole = inviteCompanyId ? 'teammate' : 'invoice_owner';
+    
+    console.log('Profile data:', { userId, userEmail, newCompanyId, userRole });
+
+    // Wait a moment to ensure the user is fully authenticated
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert([
+        {
+          id: userId,
+          email: userEmail,
+          company_id: newCompanyId,
+          role: userRole
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Profile creation error:', error);
+      
+      // If it's a duplicate error, try to fetch existing profile
+      if (error.code === '23505') {
+        console.log('Profile already exists, fetching existing profile...');
+        const { data: existingProfile, error: fetchError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+          
+        if (fetchError) {
+          throw new Error('Failed to create or fetch user profile');
+        }
+        
+        return existingProfile;
+      }
+      
+      throw error;
+    }
+
+    console.log('Profile created successfully:', data);
+    return data;
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -43,42 +93,32 @@ export const Auth = () => {
 
         console.log('Sign-up successful, user:', data.user?.id);
 
-        // Create profile immediately after successful sign-up
-        if (data.user) {
-          const newCompanyId = inviteCompanyId || crypto.randomUUID();
-          const userRole = inviteCompanyId ? 'teammate' : 'invoice_owner';
-          
-          console.log('Creating profile with company_id:', newCompanyId, 'role:', userRole);
-          
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .insert([
-              {
-                id: data.user.id,
-                email: data.user.email,
-                company_id: newCompanyId,
-                role: userRole
-              }
-            ]);
-
-          if (profileError) {
-            console.error('Error creating profile:', profileError);
+        // Create profile if user was created successfully
+        if (data.user && !data.user.email_confirmed_at) {
+          try {
+            await createUserProfile(data.user.id, data.user.email || email);
+            
             toast({
-              title: "Warning",
-              description: "Account created but profile setup failed. Please refresh after email verification.",
+              title: "Account created!",
+              description: inviteCompanyId 
+                ? "Welcome to the team! Please check your email to verify your account."
+                : "Your company has been created! Please check your email to verify your account.",
+            });
+          } catch (profileError: any) {
+            console.error('Profile creation failed:', profileError);
+            toast({
+              title: "Account Created",
+              description: "Your account was created but profile setup encountered an issue. Please refresh after email verification.",
               variant: "destructive",
             });
-          } else {
-            console.log('Profile created successfully with company_id:', newCompanyId);
           }
+        } else if (data.user && data.user.email_confirmed_at) {
+          // User is already confirmed, they might be signing in
+          toast({
+            title: "Welcome!",
+            description: "You're now signed in.",
+          });
         }
-
-        toast({
-          title: "Account created!",
-          description: inviteCompanyId 
-            ? "Welcome to the team! Please check your email to verify your account."
-            : "Your company has been created! Please check your email to verify your account.",
-        });
       } else {
         console.log('Starting sign-in process...');
         const { error } = await supabase.auth.signInWithPassword({
@@ -95,7 +135,7 @@ export const Auth = () => {
       console.error('Auth error:', error);
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Authentication failed. Please try again.",
         variant: "destructive",
       });
     } finally {

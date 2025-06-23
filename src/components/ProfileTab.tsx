@@ -15,10 +15,13 @@ interface UserProfile {
 export const ProfileTab = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchProfile = async () => {
     console.log('Fetching user profile...');
+    setError(null);
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -29,21 +32,36 @@ export const ProfileTab = () => {
 
       console.log('Authenticated user found:', user.id);
 
-      // Try to get existing profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      // Try to get existing profile with retries for new users
+      let profileData = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (!profileData && attempts < maxAttempts) {
+        const { data, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
 
-      if (profileError && profileError.code !== 'PGRST116') {
-        console.error('Error fetching profile:', profileError);
-        throw profileError;
+        if (profileError && profileError.code !== 'PGRST116') {
+          console.error('Error fetching profile:', profileError);
+          throw profileError;
+        }
+
+        profileData = data;
+        
+        if (!profileData && attempts < maxAttempts - 1) {
+          console.log(`Profile not found, waiting before retry ${attempts + 1}/${maxAttempts}`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+        attempts++;
       }
 
-      // If no profile exists, create one with company_id
+      // If still no profile exists after retries, create one as fallback
       if (!profileData) {
-        console.log('No profile found, creating new profile for user:', user.id);
+        console.log('No profile found after retries, creating fallback profile for user:', user.id);
         const newCompanyId = crypto.randomUUID();
         
         const { data: newProfile, error: insertError } = await supabase
@@ -60,28 +78,40 @@ export const ProfileTab = () => {
           .single();
 
         if (insertError) {
-          console.error('Error creating profile:', insertError);
-          throw insertError;
+          console.error('Error creating fallback profile:', insertError);
+          
+          // One more attempt to fetch in case it was created elsewhere
+          const { data: finalAttempt } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+            
+          if (finalAttempt) {
+            profileData = finalAttempt;
+          } else {
+            throw insertError;
+          }
+        } else {
+          profileData = newProfile;
+          console.log('Fallback profile created with company_id:', newProfile);
+          
+          toast({
+            title: "Profile Setup Complete",
+            description: "Your profile and company have been set up successfully!",
+          });
         }
-
-        console.log('New profile created with company_id:', newProfile);
-        setProfile(newProfile);
-        
-        toast({
-          title: "Profile Created",
-          description: "Your profile and company have been set up successfully!",
-        });
-      } else {
-        console.log('Existing profile found:', profileData);
-        setProfile(profileData);
       }
 
-      console.log('Profile loaded successfully');
+      console.log('Profile loaded successfully:', profileData);
+      setProfile(profileData);
     } catch (error: any) {
       console.error('Failed to fetch profile:', error);
+      setError(error.message || "Failed to load profile data");
+      
       toast({
-        title: "Error",
-        description: error.message || "Failed to load profile data",
+        title: "Profile Loading Issue",
+        description: "Could not load profile. Please try again or refresh the page.",
         variant: "destructive",
       });
     } finally {
@@ -94,10 +124,14 @@ export const ProfileTab = () => {
   }, []);
 
   if (loading) {
-    return <div className="flex justify-center p-8">Loading profile...</div>;
+    return (
+      <div className="flex justify-center p-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
   }
 
-  if (!profile) {
+  if (error && !profile) {
     return (
       <div className="space-y-6">
         <div>
@@ -106,7 +140,7 @@ export const ProfileTab = () => {
         </div>
         <Card>
           <CardContent className="p-6">
-            <p className="text-red-600 mb-4">Failed to load user profile.</p>
+            <p className="text-red-600 mb-4">Could not load profile. Please try again or refresh the page.</p>
             <button 
               onClick={fetchProfile}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
