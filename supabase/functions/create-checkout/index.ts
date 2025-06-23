@@ -12,6 +12,8 @@ const corsHeaders = {
 
 serve(async (req) => {
   console.log("Create checkout function called with method:", req.method);
+  console.log("Request origin:", req.headers.get("origin"));
+  console.log("Request headers:", Object.fromEntries(req.headers.entries()));
 
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
