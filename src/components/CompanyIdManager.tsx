@@ -19,10 +19,13 @@ export const CompanyIdManager = ({ userProfile, onCompanyIdGenerated }: CompanyI
   const { toast } = useToast();
 
   const generateCompanyId = async () => {
-    if (!userProfile) return;
+    if (!userProfile) {
+      console.error('No user profile available');
+      return;
+    }
     
+    console.log('Generate Company ID button clicked for user:', userProfile.id);
     setGenerating(true);
-    console.log('Generating company ID for user:', userProfile.id);
     
     try {
       // Generate a UUID for the company
@@ -45,9 +48,10 @@ export const CompanyIdManager = ({ userProfile, onCompanyIdGenerated }: CompanyI
       
       toast({
         title: "Success",
-        description: "Company ID created successfully",
+        description: "Company ID created successfully!",
       });
 
+      // Refresh the profile data
       onCompanyIdGenerated();
     } catch (error: any) {
       console.error('Failed to generate company ID:', error);
@@ -79,6 +83,9 @@ export const CompanyIdManager = ({ userProfile, onCompanyIdGenerated }: CompanyI
       });
     }
   };
+
+  // Debug logging
+  console.log('CompanyIdManager rendered with userProfile:', userProfile);
 
   return (
     <Card>
@@ -113,12 +120,18 @@ export const CompanyIdManager = ({ userProfile, onCompanyIdGenerated }: CompanyI
             </p>
             <Button 
               onClick={generateCompanyId}
-              disabled={generating}
+              disabled={generating || !userProfile}
               className="bg-blue-600 hover:bg-blue-700"
+              type="button"
             >
               <Plus className="w-4 h-4 mr-2" />
               {generating ? "Generating..." : "Generate Company ID"}
             </Button>
+            {!userProfile && (
+              <p className="text-sm text-red-600">
+                Unable to load user profile. Please refresh the page.
+              </p>
+            )}
           </div>
         )}
       </CardContent>

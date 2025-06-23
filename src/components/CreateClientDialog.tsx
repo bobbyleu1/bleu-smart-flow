@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +31,7 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated, compan
     if (!companyId) {
       toast({
         title: "Error",
-        description: "Please generate a Company ID first",
+        description: "Please generate a Company ID first before adding clients",
         variant: "destructive",
       });
       return;
@@ -39,6 +40,7 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated, compan
     setLoading(true);
 
     console.log('Attempting to create client with data:', formData);
+    console.log('Company ID:', companyId);
 
     try {
       const clientData = {
@@ -88,6 +90,27 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated, compan
       setLoading(false);
     }
   };
+
+  // Don't render if no company ID
+  if (!companyId) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Company ID Required</DialogTitle>
+            <DialogDescription>
+              You need to generate a Company ID before you can add clients.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center pt-4">
+            <Button onClick={() => onOpenChange(false)} variant="outline">
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -156,7 +179,7 @@ export const CreateClientDialog = ({ open, onOpenChange, onClientCreated, compan
             </Button>
             <Button
               type="submit"
-              disabled={loading || !companyId}
+              disabled={loading}
               className="flex-1 bg-blue-600 hover:bg-blue-700"
             >
               {loading ? "Adding..." : "Add Client"}
