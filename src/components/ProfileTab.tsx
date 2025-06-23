@@ -40,17 +40,44 @@ export const ProfileTab = () => {
         .eq('id', user.id)
         .single();
 
-      if (profileError) {
-        console.error('Error fetching profile:', profileError);
+      if (profileError && profileError.code === 'PGRST116') {
+        // Profile doesn't exist, create it using the database function
+        console.log('Profile not found, creating new profile...');
         
-        if (profileError.code === 'PGRST116') {
-          // Profile doesn't exist, this shouldn't happen with the new trigger
-          // but we'll handle it as a fallback
-          console.log('Profile not found, this indicates the trigger may not be working');
-          setError('Profile not found. Please contact support.');
-          return;
+        const { data: newCompanyId, error: createError } = await supabase
+          .rpc('ensure_user_profile', {
+            user_id: user.id,
+            user_email: user.email || ''
+          });
+
+        if (createError) {
+          console.error('Error creating profile:', createError);
+          throw createError;
         }
+
+        // Fetch the newly created profile
+        const { data: newProfile, error: fetchError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        if (fetchError) {
+          console.error('Error fetching new profile:', fetchError);
+          throw fetchError;
+        }
+
+        console.log('New profile created successfully:', newProfile);
+        setProfile(newProfile);
         
+        toast({
+          title: "Profile Created",
+          description: "Your profile has been set up successfully!",
+        });
+        
+        return;
+      } else if (profileError) {
+        console.error('Error fetching profile:', profileError);
         throw profileError;
       }
 
@@ -134,7 +161,7 @@ export const ProfileTab = () => {
         </CardContent>
       </Card>
 
-      {/* Company ID Manager - only show Generate button for legacy users without company_id */}
+      {/* Company ID Manager */}
       <CompanyIdManager 
         userProfile={profile}
         onCompanyIdGenerated={fetchProfile}
