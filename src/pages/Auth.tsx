@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -30,43 +29,26 @@ export const Auth = () => {
 
     try {
       if (isSignUp) {
+        console.log('Starting sign-up process...');
+        
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            data: {
-              role: inviteCompanyId ? 'teammate' : 'invoice_owner',
-              company_id: inviteCompanyId || null
-            }
-          }
         });
 
-        if (error) throw error;
+        if (error) {
+          console.error('Sign-up error:', error);
+          throw error;
+        }
 
-        // If successful sign-up and not an invite, generate company_id
-        if (data.user && !inviteCompanyId) {
-          console.log('Creating profile with new company_id for user:', data.user.id);
-          
-          const newCompanyId = crypto.randomUUID();
-          
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .insert([
-              {
-                id: data.user.id,
-                email: data.user.email,
-                company_id: newCompanyId
-              }
-            ]);
+        console.log('Sign-up successful, user:', data.user?.id);
 
-          if (profileError) {
-            console.error('Error creating profile with company_id:', profileError);
-          } else {
-            console.log('Profile created with company_id:', newCompanyId);
-          }
-        } else if (data.user && inviteCompanyId) {
-          // For invite links, create profile with existing company_id
-          console.log('Creating profile with invite company_id for user:', data.user.id);
+        // Create profile immediately after successful sign-up
+        if (data.user) {
+          const newCompanyId = inviteCompanyId || crypto.randomUUID();
+          const userRole = inviteCompanyId ? 'teammate' : 'invoice_owner';
+          
+          console.log('Creating profile with company_id:', newCompanyId, 'role:', userRole);
           
           const { error: profileError } = await supabase
             .from('profiles')
@@ -74,14 +56,20 @@ export const Auth = () => {
               {
                 id: data.user.id,
                 email: data.user.email,
-                company_id: inviteCompanyId
+                company_id: newCompanyId,
+                role: userRole
               }
             ]);
 
           if (profileError) {
-            console.error('Error creating profile with invite company_id:', profileError);
+            console.error('Error creating profile:', profileError);
+            toast({
+              title: "Warning",
+              description: "Account created but profile setup failed. Please refresh after email verification.",
+              variant: "destructive",
+            });
           } else {
-            console.log('Profile created with invite company_id:', inviteCompanyId);
+            console.log('Profile created successfully with company_id:', newCompanyId);
           }
         }
 
@@ -92,13 +80,19 @@ export const Auth = () => {
             : "Your company has been created! Please check your email to verify your account.",
         });
       } else {
+        console.log('Starting sign-in process...');
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
-        if (error) throw error;
+        if (error) {
+          console.error('Sign-in error:', error);
+          throw error;
+        }
+        console.log('Sign-in successful');
       }
     } catch (error: any) {
+      console.error('Auth error:', error);
       toast({
         title: "Error",
         description: error.message,

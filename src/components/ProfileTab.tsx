@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -10,6 +9,7 @@ interface UserProfile {
   id: string;
   email: string;
   company_id: string | null;
+  role?: string;
 }
 
 export const ProfileTab = () => {
@@ -41,16 +41,19 @@ export const ProfileTab = () => {
         throw profileError;
       }
 
-      // If no profile exists, create one (this shouldn't happen often now with auto-creation on sign-up)
+      // If no profile exists, create one with company_id
       if (!profileData) {
-        console.log('Creating new profile for user:', user.id);
+        console.log('No profile found, creating new profile for user:', user.id);
+        const newCompanyId = crypto.randomUUID();
+        
         const { data: newProfile, error: insertError } = await supabase
           .from('profiles')
           .insert([
             {
               id: user.id,
               email: user.email,
-              company_id: null // Will be null if not created during sign-up
+              company_id: newCompanyId,
+              role: 'invoice_owner'
             }
           ])
           .select()
@@ -61,8 +64,13 @@ export const ProfileTab = () => {
           throw insertError;
         }
 
-        console.log('New profile created:', newProfile);
+        console.log('New profile created with company_id:', newProfile);
         setProfile(newProfile);
+        
+        toast({
+          title: "Profile Created",
+          description: "Your profile and company have been set up successfully!",
+        });
       } else {
         console.log('Existing profile found:', profileData);
         setProfile(profileData);
@@ -127,9 +135,16 @@ export const ProfileTab = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2 text-sm">
-            <Mail className="w-4 h-4 text-gray-500" />
-            <span>{profile?.email}</span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <Mail className="w-4 h-4 text-gray-500" />
+              <span>{profile?.email}</span>
+            </div>
+            {profile?.role && (
+              <div className="text-sm text-gray-600">
+                Role: {profile.role === 'invoice_owner' ? 'Company Owner' : 'Team Member'}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
