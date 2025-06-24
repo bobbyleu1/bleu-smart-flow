@@ -69,13 +69,7 @@ serve(async (req) => {
     console.log("Fetching job details for ID:", jobId);
     const { data: job, error: jobError } = await supabaseAdmin
       .from('jobs')
-      .select(`
-        *,
-        clients (
-          name,
-          email
-        )
-      `)
+      .select('*')
       .eq('id', jobId)
       .single();
 
@@ -101,7 +95,7 @@ serve(async (req) => {
       );
     }
 
-    console.log("Job details fetched:", { id: job.id, title: job.title, price: job.price });
+    console.log("Job details fetched:", { id: job.id, job_name: job.job_name, price: job.price });
 
     // Initialize Stripe
     const stripe = new Stripe(stripeSecretKey, {
@@ -110,7 +104,7 @@ serve(async (req) => {
 
     console.log("Creating Stripe checkout session");
 
-    // Calculate platform fee (5% of job price)
+    // Calculate job price in cents
     const jobPriceCents = Math.round(job.price * 100);
     console.log("Job price in cents:", jobPriceCents);
 
@@ -122,8 +116,8 @@ serve(async (req) => {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: job.title,
-              description: `Service for ${job.clients.name}`,
+              name: job.job_name,
+              description: `Service for ${job.client_name}`,
             },
             unit_amount: jobPriceCents,
           },
@@ -133,18 +127,18 @@ serve(async (req) => {
       mode: 'payment',
       success_url: `${req.headers.get("origin")}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${req.headers.get("origin")}/`,
-      customer_email: job.clients.email,
       metadata: {
         job_id: jobId,
+        client_name: job.client_name,
       },
     });
 
     console.log("Stripe session created:", session.id);
 
-    // Update job with stripe checkout URL
+    // Update job with payment URL
     const { error: updateError } = await supabaseAdmin
       .from('jobs')
-      .update({ stripe_checkout_url: session.url })
+      .update({ payment_url: session.url })
       .eq('id', jobId);
 
     if (updateError) {
@@ -158,7 +152,7 @@ serve(async (req) => {
       );
     }
 
-    console.log("Job updated with checkout URL");
+    console.log("Job updated with payment URL");
 
     return new Response(
       JSON.stringify({ 

@@ -63,10 +63,13 @@ serve(async (req) => {
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
       );
 
-      // Update job status to paid
+      // Update job status to paid and set paid_at timestamp
       const { error: jobUpdateError } = await supabaseAdmin
         .from('jobs')
-        .update({ status: 'paid' })
+        .update({ 
+          status: 'paid',
+          paid_at: new Date().toISOString()
+        })
         .eq('id', jobId);
 
       if (jobUpdateError) {
@@ -75,26 +78,6 @@ serve(async (req) => {
       }
 
       console.log("Updated job status to paid for job:", jobId);
-
-      // Create payment record
-      const paymentAmount = session.amount_total ? session.amount_total / 100 : 0;
-      
-      const { error: paymentError } = await supabaseAdmin
-        .from('payments')
-        .insert({
-          job_id: jobId,
-          amount: paymentAmount,
-          payment_status: 'paid',
-          paid_at: new Date().toISOString(),
-          card_saved: false
-        });
-
-      if (paymentError) {
-        console.error("Error creating payment record:", paymentError);
-        throw new Error("Failed to create payment record");
-      }
-
-      console.log("Created payment record for job:", jobId, "amount:", paymentAmount);
     }
 
     return new Response(JSON.stringify({ received: true }), {

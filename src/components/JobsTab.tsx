@@ -1,25 +1,23 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ExternalLink, CheckCircle, Clock, XCircle, Link, DollarSign, RotateCcw, Building } from "lucide-react";
+import { Plus, ExternalLink, CheckCircle, Clock, Link, DollarSign, Building } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateJobDialog } from "./CreateJobDialog";
 
 interface Job {
   id: string;
-  title: string;
+  job_name: string;
+  client_name: string;
   price: number;
-  description: string;
-  scheduled_date: string;
-  is_recurring: boolean;
+  company_id: string;
   status: 'pending' | 'paid' | 'completed';
-  stripe_checkout_url: string | null;
-  clients: {
-    name: string;
-    email: string;
-  };
+  payment_url: string | null;
+  paid_at: string | null;
+  created_at: string;
 }
 
 interface UserProfile {
@@ -33,7 +31,6 @@ export const JobsTab = () => {
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'completed'>('all');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [generatingLinks, setGeneratingLinks] = useState<Set<string>>(new Set());
-  const [markingAsPaid, setMarkingAsPaid] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   const fetchUserProfile = async () => {
@@ -113,15 +110,9 @@ export const JobsTab = () => {
 
       const { data, error } = await supabase
         .from('jobs')
-        .select(`
-          *,
-          clients!inner (
-            name,
-            email
-          )
-        `)
-        .eq('clients.company_id', profile.company_id)
-        .order('scheduled_date', { ascending: false });
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching jobs:', error);
@@ -176,7 +167,7 @@ export const JobsTab = () => {
         description: "Payment link generated successfully!",
       });
 
-      // Refresh jobs to get the updated stripe_checkout_url
+      // Refresh jobs to get the updated payment_url
       await fetchJobs();
     } catch (error: any) {
       console.error('Failed to generate payment link:', error);
@@ -189,68 +180,6 @@ export const JobsTab = () => {
       setGeneratingLinks(prev => {
         const newSet = new Set(prev);
         newSet.delete(jobId);
-        return newSet;
-      });
-    }
-  };
-
-  const markAsPaid = async (job: Job) => {
-    console.log('Marking job as paid:', job.id);
-    setMarkingAsPaid(prev => new Set(prev).add(job.id));
-    
-    try {
-      // Update job status to paid
-      const { error: jobUpdateError } = await supabase
-        .from('jobs')
-        .update({ status: 'paid' })
-        .eq('id', job.id);
-
-      if (jobUpdateError) {
-        console.error('Error updating job status:', jobUpdateError);
-        throw jobUpdateError;
-      }
-
-      // Create payment record
-      const paymentData = {
-        job_id: job.id,
-        amount: job.price,
-        payment_status: 'paid' as const,
-        paid_at: new Date().toISOString(),
-        card_saved: false,
-        payment_method: 'manual'
-      };
-
-      console.log('Creating payment record:', paymentData);
-
-      const { error: paymentError } = await supabase
-        .from('payments')
-        .insert(paymentData);
-
-      if (paymentError) {
-        console.error('Error creating payment record:', paymentError);
-        throw paymentError;
-      }
-
-      console.log('Job marked as paid successfully');
-
-      toast({
-        title: "Success",
-        description: "Job marked as paid successfully!",
-      });
-
-      // Refresh jobs to get the updated status
-      await fetchJobs();
-    } catch (error: any) {
-      console.error('Failed to mark job as paid:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to mark job as paid",
-        variant: "destructive",
-      });
-    } finally {
-      setMarkingAsPaid(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(job.id);
         return newSet;
       });
     }
@@ -282,7 +211,7 @@ export const JobsTab = () => {
       case 'completed':
         return <CheckCircle className="w-4 h-4 text-blue-600" />;
       default:
-        return <XCircle className="w-4 h-4 text-red-600" />;
+        return <Clock className="w-4 h-4 text-gray-600" />;
     }
   };
 
@@ -295,7 +224,7 @@ export const JobsTab = () => {
       case 'completed':
         return 'bg-blue-100 text-blue-800';
       default:
-        return 'bg-red-100 text-red-800';
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -367,25 +296,15 @@ export const JobsTab = () => {
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">
                 <div>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    {job.title}
-                    {job.is_recurring && (
-                      <span title="Recurring job">
-                        <RotateCcw className="w-4 h-4 text-blue-600" />
-                      </span>
-                    )}
-                  </CardTitle>
-                  <CardDescription className="flex items-center gap-2 mt-1">
-                    {job.clients.name}
-                    {job.is_recurring && (
-                      <Badge variant="secondary" className="text-xs">Recurring</Badge>
-                    )}
+                  <CardTitle className="text-lg">{job.job_name}</CardTitle>
+                  <CardDescription className="mt-1">
+                    Client: {job.client_name}
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-1">
                   {getStatusIcon(job.status)}
                   <Badge className={getStatusColor(job.status)}>
-                    {job.status}
+                    {job.status === 'paid' ? '✅ Paid' : job.status}
                   </Badge>
                 </div>
               </div>
@@ -394,59 +313,56 @@ export const JobsTab = () => {
               <div className="text-2xl font-bold text-green-600">
                 ${job.price.toFixed(2)}
               </div>
-              <p className="text-sm text-gray-600 line-clamp-2">
-                {job.description}
-              </p>
-              <div className="text-sm text-gray-500">
-                Scheduled: {new Date(job.scheduled_date).toLocaleDateString()}
-              </div>
-              <div className="space-y-2">
-                {job.status !== 'paid' && (
-                  <div className="flex gap-2">
-                    {job.stripe_checkout_url ? (
-                      <>
+              {job.paid_at && (
+                <div className="text-sm text-gray-500">
+                  Paid: {new Date(job.paid_at).toLocaleDateString()}
+                </div>
+              )}
+              
+              {/* Payment Actions */}
+              {job.status === 'paid' ? (
+                <div className="text-sm text-green-600 font-medium">
+                  Payment completed
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {job.payment_url ? (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => window.open(job.stripe_checkout_url!, '_blank')}
+                          onClick={() => window.open(job.payment_url!, '_blank')}
                           className="flex-1"
                         >
                           <ExternalLink className="w-4 h-4 mr-1" />
-                          Open Link
+                          Open Payment Link
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => copyPaymentLink(job.stripe_checkout_url!)}
+                          onClick={() => copyPaymentLink(job.payment_url!)}
                         >
                           <Link className="w-4 h-4" />
                         </Button>
-                      </>
-                    ) : (
-                      <Button
-                        size="sm"
-                        onClick={() => generatePaymentLink(job.id)}
-                        disabled={generatingLinks.has(job.id)}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700"
-                      >
-                        {generatingLinks.has(job.id) ? "Generating..." : "Generate Link"}
-                      </Button>
-                    )}
-                  </div>
-                )}
-                {job.status !== 'paid' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => markAsPaid(job)}
-                    disabled={markingAsPaid.has(job.id)}
-                    className="w-full border-green-300 text-green-700 hover:bg-green-50"
-                  >
-                    <DollarSign className="w-4 h-4 mr-1" />
-                    {markingAsPaid.has(job.id) ? "Marking as Paid..." : "Mark as Paid"}
-                  </Button>
-                )}
-              </div>
+                      </div>
+                      <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded break-all">
+                        {job.payment_url}
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => generatePaymentLink(job.id)}
+                      disabled={generatingLinks.has(job.id)}
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                    >
+                      <DollarSign className="w-4 h-4 mr-1" />
+                      {generatingLinks.has(job.id) ? "Generating..." : "Generate Payment Link"}
+                    </Button>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}
