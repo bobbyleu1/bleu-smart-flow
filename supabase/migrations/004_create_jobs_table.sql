@@ -1,4 +1,7 @@
 
+-- Drop existing table if it exists to recreate with correct structure
+DROP TABLE IF EXISTS public.jobs CASCADE;
+
 -- Create jobs table with updated schema
 CREATE TABLE IF NOT EXISTS public.jobs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -52,6 +55,15 @@ CREATE POLICY "Users can delete jobs for their company"
       SELECT company_id FROM public.profiles WHERE id = auth.uid()
     )
   );
+
+-- Create function to update updated_at column if it doesn't exist
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
 
 -- Create trigger to automatically update updated_at on jobs table
 CREATE TRIGGER update_jobs_updated_at
