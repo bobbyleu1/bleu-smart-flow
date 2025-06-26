@@ -50,7 +50,26 @@ serve(async (req) => {
     }
 
     const user = userData.user;
-    console.log("Creating Stripe Connect account for user:", user.email);
+    console.log("Processing Stripe Connect for user:", user.email);
+
+    // Check if user already has Stripe connected
+    const { data: profile, error: profileError } = await supabaseClient
+      .from('profiles')
+      .select('stripe_connected, stripe_account_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!profileError && profile?.stripe_connected) {
+      console.log("User already has Stripe connected, redirecting to dashboard");
+      return new Response(JSON.stringify({ 
+        success: true,
+        url: "https://preview--bleu-smart-flow.lovable.app/",
+        already_connected: true
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
 
     // Check Stripe key
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
@@ -82,12 +101,11 @@ serve(async (req) => {
 
     console.log("Created Stripe account:", account.id);
 
-    // Create account link for onboarding
-    const origin = req.headers.get("origin") || "https://eezaljhphekuchbqgkth.supabase.co";
+    // Create account link for onboarding with fixed URLs
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
-      refresh_url: `${origin}/profile?stripe_refresh=true`,
-      return_url: `${origin}/profile?stripe_success=true`,
+      refresh_url: "https://preview--bleu-smart-flow.lovable.app/",
+      return_url: "https://preview--bleu-smart-flow.lovable.app/",
       type: "account_onboarding",
     });
 
