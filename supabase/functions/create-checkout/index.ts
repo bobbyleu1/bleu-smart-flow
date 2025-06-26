@@ -121,7 +121,52 @@ serve(async (req) => {
       );
     }
 
-    console.log("Job details fetched:", { id: job.id, job_name: job.job_name, price: job.price });
+    console.log("Job details fetched:", { id: job.id, job_name: job.job_name, price: job.price, company_id: job.company_id });
+
+    // Fetch the company's Stripe account ID from profiles table
+    let companyStripeAccountId = null;
+    if (job.company_id) {
+      console.log("Fetching company Stripe account for company_id:", job.company_id);
+      const { data: companyProfile, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .select('stripe_account_id, stripe_connected')
+        .eq('company_id', job.company_id)
+        .eq('stripe_connected', true)
+        .single();
+
+      if (profileError) {
+        console.error("Error fetching company profile:", profileError);
+        return new Response(
+          JSON.stringify({ 
+            success: false,
+            error: "Company not found or Stripe not connected. Please ensure the company has connected their Stripe account." 
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          }
+        );
+      }
+
+      if (!companyProfile?.stripe_account_id) {
+        console.error("Company does not have Stripe account connected");
+        return new Response(
+          JSON.stringify({ 
+            success: false,
+            error: "Company Stripe account not found. Please connect Stripe first." 
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          }
+        );
+      }
+
+      companyStripeAccountId = companyProfile.stripe_account_id;
+      console.log("Found company Stripe account:", companyStripeAccountId);
+    } else {
+      console.warn("Job does not have company_id, using platform account");
+    }
 
     // Safe price handling
     let jobPrice;
@@ -151,13 +196,18 @@ serve(async (req) => {
 
     console.log("Creating Stripe checkout session");
 
-    // Apply 5% platform fee and convert to cents (round to nearest cent)
-    const jobPriceWithFee = Math.round(jobPrice * 1.05 * 100);
-    console.log("Original job price:", jobPrice);
-    console.log("Job price with 5% fee in cents:", jobPriceWithFee);
+    // Convert to cents and calculate platform fee (5%)
+    const jobPriceInCents = Math.round(jobPrice * 100);
+    const platformFeeInCents = Math.round(jobPriceInCents * 0.05);
+    const totalAmountInCents = jobPriceInCents;
 
-    if (jobPriceWithFee < 50) {
-      console.error("Price too low for Stripe (minimum $0.50):", jobPriceWithFee);
+    console.log("Original job price:", jobPrice);
+    console.log("Job price in cents:", jobPriceInCents);
+    console.log("Platform fee (5%) in cents:", platformFeeInCents);
+    console.log("Total amount in cents:", totalAmountInCents);
+
+    if (totalAmountInCents < 50) {
+      console.error("Price too low for Stripe (minimum $0.50):", totalAmountInCents);
       return new Response(
         JSON.stringify({ 
           success: false,
@@ -170,8 +220,8 @@ serve(async (req) => {
       );
     }
 
-    // Create Stripe checkout session
-    const session = await stripe.checkout.sessions.create({
+    // Create checkout session configuration
+    const sessionConfig = {
       payment_method_types: ['card'],
       line_items: [
         {
@@ -179,9 +229,9 @@ serve(async (req) => {
             currency: 'usd',
             product_data: {
               name: job.job_name || 'Service',
-              description: `Service for ${job.client_name || 'Client'} (includes 5% platform fee)`,
+              description: `Service for ${job.client_name || 'Client'}`,
             },
-            unit_amount: jobPriceWithFee,
+            unit_amount: totalAmountInCents,
           },
           quantity: 1,
         },
@@ -193,9 +243,29 @@ serve(async (req) => {
         job_id: jobId,
         client_name: job.client_name || 'Unknown Client',
         original_price: jobPrice.toString(),
-        platform_fee_percentage: "5",
+        platform_fee_amount: (platformFeeInCents / 100).toString(),
+        company_id: job.company_id || '',
       },
-    });
+    };
+
+    // Add Stripe Connect configuration if company has connected account
+    if (companyStripeAccountId) {
+      sessionConfig.payment_intent_data = {
+        application_fee_amount: platformFeeInCents,
+        transfer_data: {
+          destination: companyStripeAccountId,
+        },
+      };
+      console.log("Using Stripe Connect with destination:", companyStripeAccountId, "and platform fee:", platformFeeInCents);
+    } else {
+      console.log("Using platform account (no Stripe Connect)");
+    }
+
+    // Create Stripe checkout session
+    const session = await stripe.checkout.sessions.create(
+      sessionConfig,
+      companyStripeAccountId ? { stripeAccount: companyStripeAccountId } : undefined
+    );
 
     console.log("Stripe session created:", session.id);
 
