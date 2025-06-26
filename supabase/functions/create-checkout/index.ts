@@ -10,6 +10,9 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
+// Platform account ID to avoid self-transfer
+const PLATFORM_STRIPE_ACCOUNT_ID = "acct_1Re95IPqtlol8JdB";
+
 serve(async (req) => {
   console.log("Create checkout function called with method:", req.method);
   console.log("Request origin:", req.headers.get("origin"));
@@ -125,6 +128,8 @@ serve(async (req) => {
 
     // Fetch the company's Stripe account ID from profiles table
     let companyStripeAccountId = null;
+    let shouldUseStripeConnect = false;
+    
     if (job.company_id) {
       console.log("Fetching company Stripe account for company_id:", job.company_id);
       const { data: companyProfile, error: profileError } = await supabaseAdmin
@@ -135,37 +140,25 @@ serve(async (req) => {
         .single();
 
       if (profileError) {
-        console.error("Error fetching company profile:", profileError);
-        return new Response(
-          JSON.stringify({ 
-            success: false,
-            error: "Company not found or Stripe not connected. Please ensure the company has connected their Stripe account." 
-          }),
-          {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 200,
-          }
-        );
+        console.warn("Error fetching company profile or company not Stripe connected:", profileError);
+        console.log("Using platform account for payment processing");
+      } else if (companyProfile?.stripe_account_id) {
+        companyStripeAccountId = companyProfile.stripe_account_id;
+        console.log("Found company Stripe account:", companyStripeAccountId);
+        
+        // Check if company account is different from platform account
+        if (companyStripeAccountId === PLATFORM_STRIPE_ACCOUNT_ID) {
+          console.log("Company account matches platform account - using platform-only processing");
+          shouldUseStripeConnect = false;
+        } else {
+          console.log("Company account is different from platform - using Stripe Connect");
+          shouldUseStripeConnect = true;
+        }
+      } else {
+        console.warn("Company does not have Stripe account connected, using platform account");
       }
-
-      if (!companyProfile?.stripe_account_id) {
-        console.error("Company does not have Stripe account connected");
-        return new Response(
-          JSON.stringify({ 
-            success: false,
-            error: "Company Stripe account not found. Please connect Stripe first." 
-          }),
-          {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 200,
-          }
-        );
-      }
-
-      companyStripeAccountId = companyProfile.stripe_account_id;
-      console.log("Found company Stripe account:", companyStripeAccountId);
     } else {
-      console.warn("Job does not have company_id, using platform account");
+      console.log("Job does not have company_id, using platform account");
     }
 
     // Safe price handling
@@ -248,24 +241,23 @@ serve(async (req) => {
       },
     };
 
-    // Add Stripe Connect configuration if company has connected account
-    if (companyStripeAccountId) {
-      sessionConfig.payment_intent_data = {
-        application_fee_amount: platformFeeInCents,
-        transfer_data: {
-          destination: companyStripeAccountId,
-        },
+    // Always add application fee for platform
+    sessionConfig.payment_intent_data = {
+      application_fee_amount: platformFeeInCents,
+    };
+
+    // Add Stripe Connect configuration only if using different connected account
+    if (shouldUseStripeConnect && companyStripeAccountId) {
+      sessionConfig.payment_intent_data.transfer_data = {
+        destination: companyStripeAccountId,
       };
       console.log("Using Stripe Connect with destination:", companyStripeAccountId, "and platform fee:", platformFeeInCents);
     } else {
-      console.log("Using platform account (no Stripe Connect)");
+      console.log("Using platform account only with application fee:", platformFeeInCents);
     }
 
     // Create Stripe checkout session
-    const session = await stripe.checkout.sessions.create(
-      sessionConfig,
-      companyStripeAccountId ? { stripeAccount: companyStripeAccountId } : undefined
-    );
+    const session = await stripe.checkout.sessions.create(sessionConfig);
 
     console.log("Stripe session created:", session.id);
 
