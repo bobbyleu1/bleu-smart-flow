@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,6 +51,9 @@ export const ProfileTab = () => {
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }
+
+    // Always check Stripe status when profile tab loads
+    checkStripeStatus();
   }, []);
 
   const fetchProfile = async () => {
@@ -181,15 +183,30 @@ export const ProfileTab = () => {
     if (!profile) return;
     
     try {
-      const { data, error } = await supabase.functions.invoke('check-stripe-status');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const { data, error } = await supabase.functions.invoke('check-stripe-status', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
       
       if (error) {
-        throw error;
+        console.error('Error checking Stripe status:', error);
+        return;
       }
 
-      if (data.connected && !profile.stripe_connected) {
+      console.log('Stripe status check result:', data);
+
+      if (data?.connected && !profile.stripe_connected) {
+        console.log('Stripe status updated, refreshing profile');
         // Refresh profile to get updated status
         await fetchProfile();
+        toast({
+          title: "Stripe Connected",
+          description: "Your Stripe account is now connected and ready to receive payments!",
+        });
       }
     } catch (error) {
       console.error('Error checking Stripe status:', error);

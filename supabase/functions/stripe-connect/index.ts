@@ -59,16 +59,67 @@ serve(async (req) => {
       .eq('id', user.id)
       .single();
 
-    if (!profileError && profile?.stripe_connected) {
-      console.log("User already has Stripe connected, redirecting to dashboard");
-      return new Response(JSON.stringify({ 
-        success: true,
-        url: "https://preview--bleu-smart-flow.lovable.app/",
-        already_connected: true
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
+    // If user already has a Stripe account, check its status with Stripe API
+    if (!profileError && profile?.stripe_account_id) {
+      console.log("User has existing Stripe account, checking status:", profile.stripe_account_id);
+      
+      const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+      if (!stripeKey) {
+        console.error("STRIPE_SECRET_KEY not found");
+        return new Response(JSON.stringify({ 
+          success: false,
+          error: "Stripe configuration missing" 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        });
+      }
+
+      const stripe = new Stripe(stripeKey, {
+        apiVersion: "2023-10-16",
       });
+
+      try {
+        const account = await stripe.accounts.retrieve(profile.stripe_account_id);
+        console.log("Stripe account status:", { 
+          id: account.id, 
+          details_submitted: account.details_submitted,
+          charges_enabled: account.charges_enabled 
+        });
+
+        // Update the profile based on Stripe status
+        const isConnected = account.details_submitted && account.charges_enabled;
+        
+        if (isConnected !== profile.stripe_connected) {
+          console.log("Updating stripe_connected status to:", isConnected);
+          const { error: updateError } = await supabaseClient
+            .from('profiles')
+            .update({ 
+              stripe_connected: isConnected,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', user.id);
+
+          if (updateError) {
+            console.error('Error updating profile stripe status:', updateError);
+          }
+        }
+
+        if (isConnected) {
+          console.log("User already has Stripe connected, redirecting to dashboard");
+          return new Response(JSON.stringify({ 
+            success: true,
+            url: "https://preview--bleu-smart-flow.lovable.app/",
+            already_connected: true
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          });
+        }
+      } catch (stripeError) {
+        console.error("Error checking Stripe account status:", stripeError);
+        // Continue with creating new account link if there's an error
+      }
     }
 
     // Check Stripe key
@@ -89,48 +140,52 @@ serve(async (req) => {
       apiVersion: "2023-10-16",
     });
 
-    // Create Stripe Connect account
-    const account = await stripe.accounts.create({
-      type: "express",
-      email: user.email,
-      capabilities: {
-        card_payments: { requested: true },
-        transfers: { requested: true },
-      },
-    });
+    let accountId = profile?.stripe_account_id;
 
-    console.log("Created Stripe account:", account.id);
+    // Create Stripe Connect account if it doesn't exist
+    if (!accountId) {
+      const account = await stripe.accounts.create({
+        type: "express",
+        email: user.email,
+        capabilities: {
+          card_payments: { requested: true },
+          transfers: { requested: true },
+        },
+      });
+
+      console.log("Created Stripe account:", account.id);
+      accountId = account.id;
+
+      // Update user profile with Stripe account ID
+      const { error: updateError } = await supabaseClient
+        .from('profiles')
+        .update({ 
+          stripe_account_id: account.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Error updating profile with Stripe account:', updateError);
+        // Don't fail the whole process for this error, just log it
+      }
+    }
 
     // Create account link for onboarding with fixed URLs
     const accountLink = await stripe.accountLinks.create({
-      account: account.id,
+      account: accountId,
       refresh_url: "https://preview--bleu-smart-flow.lovable.app/",
       return_url: "https://preview--bleu-smart-flow.lovable.app/",
       type: "account_onboarding",
     });
 
     console.log("Created account link:", accountLink.url);
-
-    // Update user profile with Stripe account ID
-    const { error: updateError } = await supabaseClient
-      .from('profiles')
-      .update({ 
-        stripe_account_id: account.id,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', user.id);
-
-    if (updateError) {
-      console.error('Error updating profile with Stripe account:', updateError);
-      // Don't fail the whole process for this error, just log it
-    }
-
     console.log("Stripe Connect process completed successfully");
 
     return new Response(JSON.stringify({ 
       success: true,
       url: accountLink.url,
-      account_id: account.id 
+      account_id: accountId 
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,

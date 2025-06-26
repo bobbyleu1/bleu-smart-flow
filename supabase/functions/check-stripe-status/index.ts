@@ -14,9 +14,18 @@ serve(async (req) => {
   }
 
   try {
+    console.log("Check Stripe status function started");
+    
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      throw new Error("No authorization header provided");
+      console.error("No authorization header provided");
+      return new Response(JSON.stringify({ 
+        success: false,
+        error: "No authorization header provided" 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+      });
     }
 
     // Initialize Supabase client
@@ -30,54 +39,95 @@ serve(async (req) => {
     const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
     
     if (userError || !userData.user) {
-      throw new Error("User not authenticated");
+      console.error("User authentication error:", userError);
+      return new Response(JSON.stringify({ 
+        success: false,
+        error: "User not authenticated" 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+      });
     }
 
     const user = userData.user;
+    console.log("Checking Stripe status for user:", user.email);
 
     // Get user profile with Stripe account ID
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
-      .select('stripe_account_id')
+      .select('stripe_account_id, stripe_connected')
       .eq('id', user.id)
       .single();
 
     if (profileError || !profile?.stripe_account_id) {
-      return new Response(JSON.stringify({ connected: false }), {
+      console.log("No Stripe account found for user");
+      return new Response(JSON.stringify({ 
+        success: true,
+        connected: false 
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
     }
 
-    // Initialize Stripe and check account status
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
+    // Check Stripe key
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeKey) {
+      console.error("STRIPE_SECRET_KEY not found");
+      return new Response(JSON.stringify({ 
+        success: false,
+        error: "Stripe configuration missing" 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500,
+      });
+    }
+
+    // Initialize Stripe
+    const stripe = new Stripe(stripeKey, {
       apiVersion: "2023-10-16",
     });
 
+    // Check account status with Stripe
     const account = await stripe.accounts.retrieve(profile.stripe_account_id);
-    const isConnected = account.charges_enabled && account.payouts_enabled;
-
-    console.log("Stripe account status:", {
+    console.log("Stripe account details:", {
       id: account.id,
-      charges_enabled: account.charges_enabled,
-      payouts_enabled: account.payouts_enabled,
-      connected: isConnected
+      details_submitted: account.details_submitted,
+      charges_enabled: account.charges_enabled
     });
 
-    // Update profile with connection status
-    if (isConnected) {
-      await supabaseClient
+    const isConnected = account.details_submitted && account.charges_enabled;
+
+    // Update profile if status changed
+    if (isConnected !== profile.stripe_connected) {
+      console.log("Updating stripe_connected status from", profile.stripe_connected, "to", isConnected);
+      
+      const { error: updateError } = await supabaseClient
         .from('profiles')
         .update({ 
-          stripe_connected: true,
+          stripe_connected: isConnected,
           updated_at: new Date().toISOString()
         })
         .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Error updating profile stripe status:', updateError);
+        return new Response(JSON.stringify({ 
+          success: false,
+          error: "Failed to update profile" 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        });
+      }
     }
 
+    console.log("Stripe status check completed successfully");
+
     return new Response(JSON.stringify({ 
+      success: true,
       connected: isConnected,
-      account_id: account.id 
+      account_id: account.id
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
@@ -85,7 +135,10 @@ serve(async (req) => {
 
   } catch (error) {
     console.error("Check Stripe status error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: error.message || "An unexpected error occurred"
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });

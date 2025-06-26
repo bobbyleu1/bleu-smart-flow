@@ -31,6 +31,9 @@ export const Dashboard = ({ session }: DashboardProps) => {
 
   useEffect(() => {
     fetchUserProfile();
+    
+    // Check Stripe status on component mount (in case user just returned from Stripe)
+    checkStripeStatusOnLoad();
   }, [session]);
 
   const fetchUserProfile = async () => {
@@ -53,6 +56,32 @@ export const Dashboard = ({ session }: DashboardProps) => {
       setUserProfile({ company_id: null, is_demo: false, stripe_connected: false });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkStripeStatusOnLoad = async () => {
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession?.access_token) return;
+
+      const { data, error } = await supabase.functions.invoke('check-stripe-status', {
+        headers: {
+          Authorization: `Bearer ${currentSession.access_token}`,
+        },
+      });
+      
+      if (error) {
+        console.error('Error checking Stripe status:', error);
+        return;
+      }
+
+      if (data?.connected) {
+        console.log('Stripe is connected, refreshing profile');
+        // Refresh profile to get updated stripe_connected status
+        await fetchUserProfile();
+      }
+    } catch (error) {
+      console.error('Failed to check Stripe status:', error);
     }
   };
 
