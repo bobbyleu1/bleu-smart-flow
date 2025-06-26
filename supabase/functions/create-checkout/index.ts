@@ -147,15 +147,21 @@ serve(async (req) => {
       );
     }
 
+    // Initialize Stripe
+    const stripe = new Stripe(stripeSecretKey, {
+      apiVersion: "2023-10-16",
+    });
+
     // Determine if we should use Stripe Connect
     let useStripeConnect = false;
     let connectedStripeAccountId = null;
+    let connectedAccountChargesEnabled = false;
     
     if (job.company_id) {
       console.log("Fetching company Stripe account for company_id:", job.company_id);
       const { data: companyProfile, error: profileError } = await supabaseAdmin
         .from('profiles')
-        .select('stripe_account_id')
+        .select('stripe_account_id, stripe_connected')
         .eq('company_id', job.company_id)
         .eq('stripe_connected', true)
         .single();
@@ -168,29 +174,33 @@ serve(async (req) => {
         
         // Check if company account is different from platform account
         if (connectedStripeAccountId !== PLATFORM_STRIPE_ACCOUNT_ID) {
-          useStripeConnect = true;
-          console.log('Using Connect account:', connectedStripeAccountId);
+          // Verify the connected account can accept charges
+          try {
+            const account = await stripe.accounts.retrieve(connectedStripeAccountId);
+            connectedAccountChargesEnabled = account.charges_enabled;
+            console.log("Connected account charges_enabled:", connectedAccountChargesEnabled);
+            
+            if (connectedAccountChargesEnabled) {
+              useStripeConnect = true;
+              console.log('Using Connect account:', connectedStripeAccountId);
+            } else {
+              console.log('Connected account cannot accept charges, falling back to platform');
+            }
+          } catch (accountError) {
+            console.error('Error checking connected account:', accountError);
+            console.log('Falling back to platform account due to account error');
+          }
         } else {
-          console.log('Company account matches platform account, skipping Connect');
+          console.log('Company account matches platform account, using platform processing');
         }
       }
     }
 
-    // Calculate amounts in cents - ADD 5% on top for connected accounts
-    let totalPriceInCents;
-    let platformFeeInCents = 0;
+    // Calculate amounts in cents
+    const totalPriceInCents = Math.round(jobPrice * 100);
+    const platformFeeInCents = useStripeConnect ? Math.round(jobPrice * 100 * 0.05) : 0; // 5% platform fee
     
-    if (useStripeConnect) {
-      // Add 5% on top of the original price
-      const priceWith5Percent = jobPrice * 1.05;
-      totalPriceInCents = Math.round(priceWith5Percent * 100);
-      platformFeeInCents = Math.round(jobPrice * 100 * 0.05);
-      console.log(`Connected account pricing: Original $${jobPrice}, Total with 5% markup $${priceWith5Percent}, Platform fee: $${platformFeeInCents/100}`);
-    } else {
-      // Platform account - no markup
-      totalPriceInCents = Math.round(jobPrice * 100);
-      console.log(`Platform account pricing: Total $${jobPrice}, no markup applied`);
-    }
+    console.log(`Pricing: Job price $${jobPrice}, Total ${totalPriceInCents} cents, Platform fee: ${platformFeeInCents} cents`);
 
     if (totalPriceInCents < 50) {
       console.error("Price too low for Stripe (minimum $0.50):", totalPriceInCents);
@@ -205,11 +215,6 @@ serve(async (req) => {
         }
       );
     }
-
-    // Initialize Stripe
-    const stripe = new Stripe(stripeSecretKey, {
-      apiVersion: "2023-10-16",
-    });
 
     console.log("Creating Stripe checkout session");
 
@@ -236,30 +241,26 @@ serve(async (req) => {
         job_id: jobId,
         client_name: job.client_name || 'Unknown Client',
         original_price: jobPrice.toString(),
-        total_price_with_markup: (totalPriceInCents / 100).toString(),
         platform_fee_amount: (platformFeeInCents / 100).toString(),
         company_id: job.company_id || '',
-        routing_method: useStripeConnect ? 'stripe_connect' : 'platform_only',
+        routing_method: useStripeConnect ? 'stripe_connect_direct' : 'platform_only',
       },
     };
 
-    // Configure payment intent data for Stripe Connect
-    if (useStripeConnect && connectedStripeAccountId) {
+    // Add application fee for Stripe Connect
+    if (useStripeConnect && platformFeeInCents > 0) {
       sessionConfig.payment_intent_data = {
         application_fee_amount: platformFeeInCents,
-        transfer_data: {
-          destination: connectedStripeAccountId,
-        },
       };
-      console.log('Using Connect account:', connectedStripeAccountId, 'Platform fee (cents):', platformFeeInCents);
-    } else {
-      console.log('Fallback to platform checkout');
+      console.log('Using Stripe Connect Direct Charges with application fee:', platformFeeInCents, 'cents');
     }
 
     try {
-      // Create Stripe checkout session
+      // Create Stripe checkout session - use stripeAccount parameter for Connect
       const session = useStripeConnect && connectedStripeAccountId 
-        ? await stripe.checkout.sessions.create(sessionConfig, { stripeAccount: connectedStripeAccountId })
+        ? await stripe.checkout.sessions.create(sessionConfig, { 
+            stripeAccount: connectedStripeAccountId 
+          })
         : await stripe.checkout.sessions.create(sessionConfig);
 
       console.log("SUCCESS: Stripe session created:", session.id);
@@ -291,12 +292,13 @@ serve(async (req) => {
             original_price: jobPrice,
             total_price: totalPriceInCents / 100,
             platform_fee: platformFeeInCents / 100,
-            markup_applied: useStripeConnect
+            connect_used: useStripeConnect
           },
           routing_info: {
-            method: useStripeConnect ? 'stripe_connect' : 'platform_only',
+            method: useStripeConnect ? 'stripe_connect_direct' : 'platform_only',
             destination_account: useStripeConnect ? connectedStripeAccountId : 'platform',
             application_fee_cents: platformFeeInCents,
+            charges_enabled: connectedAccountChargesEnabled
           }
         }),
         {
@@ -307,11 +309,10 @@ serve(async (req) => {
     } catch (stripeError) {
       console.error("STRIPE API ERROR:", stripeError);
       
-      // Handle specific Stripe Connect errors
-      if (stripeError.message?.includes("cannot be set to your own account")) {
-        console.error("ERROR: Attempted to transfer to own account - falling back to platform processing");
+      // Fallback: Create platform-only session if Connect fails
+      if (useStripeConnect) {
+        console.log("Stripe Connect failed, falling back to platform processing");
         
-        // Fallback: Create session without transfer_data
         const fallbackConfig = { ...sessionConfig };
         delete fallbackConfig.payment_intent_data;
         
@@ -323,7 +324,7 @@ serve(async (req) => {
             success: true,
             url: fallbackSession.url,
             sessionId: fallbackSession.id,
-            warning: "Routed to platform account due to Stripe Connect configuration issue"
+            warning: "Routed to platform account due to Stripe Connect issue"
           }),
           {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -332,7 +333,7 @@ serve(async (req) => {
         );
       }
       
-      // Re-throw other Stripe errors
+      // Re-throw error if not using Connect
       throw stripeError;
     }
   } catch (error) {
