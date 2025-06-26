@@ -95,17 +95,24 @@ export const PaymentsTab = () => {
         .order('paid_at', { ascending: false, nullsFirst: false });
 
       if (error) throw error;
-      setPayments(data || []);
+      
+      // Type assertion to handle the payment_status field
+      const typedPayments = (data || []).map(payment => ({
+        ...payment,
+        payment_status: payment.payment_status as 'pending' | 'paid' | 'failed'
+      })) as Payment[];
+      
+      setPayments(typedPayments);
 
-      const totalRevenue = data?.reduce((sum, payment) => 
+      const totalRevenue = typedPayments?.reduce((sum, payment) => 
         payment.payment_status === 'paid' ? sum + payment.amount : sum, 0) || 0;
       
-      const pendingAmount = data?.reduce((sum, payment) => 
+      const pendingAmount = typedPayments?.reduce((sum, payment) => 
         payment.payment_status === 'pending' ? sum + payment.amount : sum, 0) || 0;
 
       const thisMonth = new Date();
       thisMonth.setDate(1);
-      const paidThisMonth = data?.reduce((sum, payment) => {
+      const paidThisMonth = typedPayments?.reduce((sum, payment) => {
         if (payment.payment_status === 'paid' && payment.paid_at) {
           const paidDate = new Date(payment.paid_at);
           return paidDate >= thisMonth ? sum + payment.amount : sum;

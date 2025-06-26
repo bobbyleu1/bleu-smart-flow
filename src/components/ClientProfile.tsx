@@ -65,7 +65,14 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
         .order('scheduled_date', { ascending: false });
 
       if (jobsError) throw jobsError;
-      setJobs(jobsData || []);
+      
+      // Type assertion to handle the status field
+      const typedJobs = (jobsData || []).map(job => ({
+        ...job,
+        status: job.status as 'pending' | 'paid' | 'completed' | 'test' | null
+      })) as Job[];
+      
+      setJobs(typedJobs);
     } catch (error: any) {
       toast({
         title: "Error",

@@ -150,7 +150,14 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
       }
       
       console.log('Jobs fetched successfully:', data);
-      setJobs(data || []);
+      
+      // Type assertion to handle the status field
+      const typedJobs = (data || []).map(job => ({
+        ...job,
+        status: job.status as 'pending' | 'paid' | 'completed' | 'test' | null
+      })) as Job[];
+      
+      setJobs(typedJobs);
     } catch (error: any) {
       console.error('Failed to fetch jobs:', error);
       toast({
