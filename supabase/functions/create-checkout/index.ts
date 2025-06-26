@@ -32,29 +32,49 @@ serve(async (req) => {
       console.error("STRIPE_SECRET_KEY not found in environment");
       return new Response(
         JSON.stringify({ 
+          success: false,
           error: "Stripe configuration missing. Please add your Stripe secret key to edge function secrets.",
           details: "Go to Supabase Dashboard → Edge Functions → Settings and add STRIPE_SECRET_KEY"
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 500,
+          status: 200,
         }
       );
     }
 
     console.log("Stripe secret key found, proceeding with request");
 
-    const requestBody = await req.json();
+    let requestBody;
+    try {
+      requestBody = await req.json();
+    } catch (jsonError) {
+      console.error("Failed to parse request body:", jsonError);
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          error: "Invalid request body - must be valid JSON" 
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
+
     const { jobId } = requestBody;
     console.log("Received job ID:", jobId);
 
     if (!jobId) {
       console.error("Job ID is required but not provided");
       return new Response(
-        JSON.stringify({ error: "Job ID is required" }),
+        JSON.stringify({ 
+          success: false,
+          error: "Job ID is required" 
+        }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 400,
+          status: 200,
         }
       );
     }
@@ -76,10 +96,13 @@ serve(async (req) => {
     if (jobError) {
       console.error("Error fetching job:", jobError);
       return new Response(
-        JSON.stringify({ error: `Failed to fetch job: ${jobError.message}` }),
+        JSON.stringify({ 
+          success: false,
+          error: `Failed to fetch job: ${jobError.message}` 
+        }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 400,
+          status: 200,
         }
       );
     }
@@ -87,15 +110,39 @@ serve(async (req) => {
     if (!job) {
       console.error("Job not found for ID:", jobId);
       return new Response(
-        JSON.stringify({ error: "Job not found" }),
+        JSON.stringify({ 
+          success: false,
+          error: "Job not found" 
+        }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 404,
+          status: 200,
         }
       );
     }
 
     console.log("Job details fetched:", { id: job.id, job_name: job.job_name, price: job.price });
+
+    // Safe price handling
+    let jobPrice;
+    try {
+      jobPrice = parseFloat(job.price);
+      if (isNaN(jobPrice) || jobPrice <= 0) {
+        throw new Error("Invalid price value");
+      }
+    } catch (priceError) {
+      console.error("Invalid job price:", job.price, priceError);
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          error: "Invalid or missing price in job data" 
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
 
     // Initialize Stripe
     const stripe = new Stripe(stripeSecretKey, {
@@ -104,10 +151,24 @@ serve(async (req) => {
 
     console.log("Creating Stripe checkout session");
 
-    // Apply 5% platform fee and round to nearest cent
-    const jobPriceWithFee = Math.round(job.price * 1.05 * 100);
-    console.log("Original job price:", job.price);
+    // Apply 5% platform fee and convert to cents (round to nearest cent)
+    const jobPriceWithFee = Math.round(jobPrice * 1.05 * 100);
+    console.log("Original job price:", jobPrice);
     console.log("Job price with 5% fee in cents:", jobPriceWithFee);
+
+    if (jobPriceWithFee < 50) {
+      console.error("Price too low for Stripe (minimum $0.50):", jobPriceWithFee);
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          error: "Job price too low for payment processing (minimum $0.50)" 
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
@@ -117,8 +178,8 @@ serve(async (req) => {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: job.job_name,
-              description: `Service for ${job.client_name} (includes 5% platform fee)`,
+              name: job.job_name || 'Service',
+              description: `Service for ${job.client_name || 'Client'} (includes 5% platform fee)`,
             },
             unit_amount: jobPriceWithFee,
           },
@@ -130,8 +191,8 @@ serve(async (req) => {
       cancel_url: `${req.headers.get("origin")}/`,
       metadata: {
         job_id: jobId,
-        client_name: job.client_name,
-        original_price: job.price.toString(),
+        client_name: job.client_name || 'Unknown Client',
+        original_price: jobPrice.toString(),
         platform_fee_percentage: "5",
       },
     });
@@ -141,24 +202,23 @@ serve(async (req) => {
     // Update job with payment URL
     const { error: updateError } = await supabaseAdmin
       .from('jobs')
-      .update({ payment_url: session.url })
+      .update({ 
+        payment_url: session.url,
+        stripe_checkout_url: session.url 
+      })
       .eq('id', jobId);
 
     if (updateError) {
       console.error("Error updating job with payment link:", updateError);
-      return new Response(
-        JSON.stringify({ error: `Failed to update job with payment link: ${updateError.message}` }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 500,
-        }
-      );
+      // Don't fail the whole request if this update fails
+      console.log("Continuing despite update error - payment link still generated");
+    } else {
+      console.log("Job updated with payment URL");
     }
-
-    console.log("Job updated with payment URL");
 
     return new Response(
       JSON.stringify({ 
+        success: true,
         url: session.url,
         sessionId: session.id 
       }),
@@ -171,12 +231,13 @@ serve(async (req) => {
     console.error("Error in create-checkout function:", error);
     return new Response(
       JSON.stringify({ 
+        success: false,
         error: error.message || "Internal server error",
         details: "Check the function logs for more information"
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 500,
+        status: 200,
       }
     );
   }
