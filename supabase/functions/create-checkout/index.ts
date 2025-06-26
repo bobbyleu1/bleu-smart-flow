@@ -13,6 +13,16 @@ const corsHeaders = {
 // Platform account ID to avoid self-transfer
 const PLATFORM_STRIPE_ACCOUNT_ID = "acct_1RWAfbLgPKVoUe8t";
 
+// Tiered platform fee calculation
+const calculatePlatformFee = (amountInCents) => {
+  const amountInDollars = amountInCents / 100;
+  if (amountInDollars < 100) return Math.round(amountInCents * 0.099);
+  if (amountInDollars < 500) return Math.round(amountInCents * 0.079);
+  if (amountInDollars < 1000) return Math.round(amountInCents * 0.059);
+  if (amountInDollars < 2500) return Math.round(amountInCents * 0.039);
+  return Math.round(amountInCents * 0.029);
+};
+
 serve(async (req) => {
   console.log("Create checkout function called with method:", req.method);
   console.log("Request origin:", req.headers.get("origin"));
@@ -126,7 +136,7 @@ serve(async (req) => {
 
     console.log("Job details fetched:", { id: job.id, job_name: job.job_name, price: job.price, company_id: job.company_id });
 
-    // Safe price handling - this is the BASE price the connected account will receive
+    // Safe price handling
     let basePriceInCents;
     try {
       const jobPrice = parseFloat(job.price);
@@ -148,23 +158,22 @@ serve(async (req) => {
       );
     }
 
-    // Calculate markup (5% of base price) - this goes to the platform
-    const platformMarkup = Math.round(basePriceInCents * 0.05);
+    // Calculate tiered platform fee
+    const platformFee = calculatePlatformFee(basePriceInCents);
+    const totalPriceInCents = basePriceInCents + platformFee;
     
-    // Total price customer pays (base + markup)
-    const totalPriceInCents = basePriceInCents + platformMarkup;
-    
-    console.log(`Markup Model Pricing:
+    console.log(`Tiered Fee Pricing:
       - Base price (to connected account): ${basePriceInCents} cents ($${basePriceInCents/100})
-      - Platform markup (5%): ${platformMarkup} cents ($${platformMarkup/100})
-      - Total customer pays: ${totalPriceInCents} cents ($${totalPriceInCents/100})`);
+      - Platform fee (tiered): ${platformFee} cents ($${platformFee/100})
+      - Total customer pays: ${totalPriceInCents} cents ($${totalPriceInCents/100})
+      - Fee percentage: ${((platformFee / basePriceInCents) * 100).toFixed(1)}%`);
 
     if (totalPriceInCents < 50) {
       console.error("Total price too low for Stripe (minimum $0.50):", totalPriceInCents);
       return new Response(
         JSON.stringify({ 
           success: false,
-          error: "Job price too low for payment processing (minimum $0.50 total including markup)" 
+          error: "Job price too low for payment processing (minimum $0.50 total including fee)" 
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -208,7 +217,7 @@ serve(async (req) => {
             
             if (connectedAccountChargesEnabled) {
               useStripeConnect = true;
-              console.log('Using Connect account for markup model:', connectedStripeAccountId);
+              console.log('Using Connect account for tiered fee model:', connectedStripeAccountId);
             } else {
               console.log('Connected account cannot accept charges, falling back to platform');
             }
@@ -226,7 +235,7 @@ serve(async (req) => {
       console.log('No company_id found in job, using platform processing');
     }
 
-    console.log("Creating Stripe checkout session with markup model");
+    console.log("Creating Stripe checkout session with tiered fee model");
 
     // Create checkout session configuration
     const sessionConfig = {
@@ -239,7 +248,7 @@ serve(async (req) => {
               name: job.job_name || 'Service',
               description: `Service for ${job.client_name || 'Client'}`,
             },
-            unit_amount: totalPriceInCents, // Customer pays base + markup
+            unit_amount: totalPriceInCents, // Customer pays base + tiered fee
           },
           quantity: 1,
         },
@@ -251,24 +260,24 @@ serve(async (req) => {
         job_id: jobId,
         client_name: job.client_name || 'Unknown Client',
         base_price: (basePriceInCents / 100).toString(),
-        platform_markup: (platformMarkup / 100).toString(),
+        platform_fee: (platformFee / 100).toString(),
         total_price: (totalPriceInCents / 100).toString(),
         company_id: job.company_id || '',
-        routing_method: useStripeConnect ? 'stripe_connect_markup' : 'platform_only',
+        routing_method: useStripeConnect ? 'stripe_connect_tiered' : 'platform_only',
       },
     };
 
-    // Add payment intent data for Stripe Connect markup model
-    if (useStripeConnect && platformMarkup > 0) {
+    // Add payment intent data for Stripe Connect tiered fee model
+    if (useStripeConnect && platformFee > 0) {
       sessionConfig.payment_intent_data = {
-        application_fee_amount: platformMarkup, // Platform gets the markup
+        application_fee_amount: platformFee, // Platform gets the tiered fee
         transfer_data: {
           destination: connectedStripeAccountId, // Connected account gets base price
         },
       };
-      console.log('Using Stripe Connect Markup Model:');
+      console.log('Using Stripe Connect Tiered Fee Model:');
       console.log('- Connected account receives:', basePriceInCents, 'cents');
-      console.log('- Platform receives markup:', platformMarkup, 'cents');
+      console.log('- Platform receives tiered fee:', platformFee, 'cents');
     }
 
     try {
@@ -293,7 +302,6 @@ serve(async (req) => {
 
       if (updateError) {
         console.error("Error updating job with payment link:", updateError);
-        // Don't fail the whole request if this update fails
         console.log("Continuing despite update error - payment link still generated");
       } else {
         console.log("Job updated with payment URL");
@@ -306,14 +314,15 @@ serve(async (req) => {
           sessionId: session.id,
           pricing_info: {
             base_price: basePriceInCents / 100,
-            platform_markup: platformMarkup / 100,
+            platform_fee: platformFee / 100,
             total_customer_pays: totalPriceInCents / 100,
+            fee_percentage: ((platformFee / basePriceInCents) * 100).toFixed(1) + '%',
             connect_used: useStripeConnect
           },
           routing_info: {
-            method: useStriteConnect ? 'stripe_connect_markup' : 'platform_only',
+            method: useStripeConnect ? 'stripe_connect_tiered' : 'platform_only',
             destination_account: useStripeConnect ? connectedStripeAccountId : 'platform',
-            markup_amount_cents: platformMarkup,
+            fee_amount_cents: platformFee,
             base_amount_cents: basePriceInCents,
             charges_enabled: connectedAccountChargesEnabled
           }
@@ -363,7 +372,7 @@ serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 200,
+        status: 200,
       }
     );
   }
