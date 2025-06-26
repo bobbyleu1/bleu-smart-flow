@@ -13,14 +13,28 @@ const corsHeaders = {
 // Platform account ID to avoid self-transfer
 const PLATFORM_STRIPE_ACCOUNT_ID = "acct_1RWAfbLgPKVoUe8t";
 
-// Tiered platform fee calculation
+// Updated tiered platform fee calculation
 const calculatePlatformFee = (amountInCents) => {
   const amountInDollars = amountInCents / 100;
-  if (amountInDollars < 100) return Math.round(amountInCents * 0.099);
-  if (amountInDollars < 500) return Math.round(amountInCents * 0.079);
-  if (amountInDollars < 1000) return Math.round(amountInCents * 0.059);
-  if (amountInDollars < 2500) return Math.round(amountInCents * 0.039);
-  return Math.round(amountInCents * 0.029);
+  
+  if (amountInDollars < 100) {
+    // Under $100: 4.9% + $0.30
+    return Math.round(amountInCents * 0.049) + 30;
+  }
+  if (amountInDollars < 500) {
+    // $100–$499: 3.9% + $0.30
+    return Math.round(amountInCents * 0.039) + 30;
+  }
+  if (amountInDollars < 1000) {
+    // $500–$999: 2.9% + $0.30
+    return Math.round(amountInCents * 0.029) + 30;
+  }
+  if (amountInDollars < 2500) {
+    // $1,000–$2,499: 1.9% + $0.30
+    return Math.round(amountInCents * 0.019) + 30;
+  }
+  // $2,500+: 1.5% flat (no fixed fee)
+  return Math.round(amountInCents * 0.015);
 };
 
 serve(async (req) => {
@@ -158,15 +172,15 @@ serve(async (req) => {
       );
     }
 
-    // Calculate tiered platform fee
+    // Calculate updated tiered platform fee
     const platformFee = calculatePlatformFee(basePriceInCents);
     const totalPriceInCents = basePriceInCents + platformFee;
     
-    console.log(`Tiered Fee Pricing:
+    console.log(`Updated Tiered Fee Pricing:
       - Base price (to connected account): ${basePriceInCents} cents ($${basePriceInCents/100})
-      - Platform fee (tiered): ${platformFee} cents ($${platformFee/100})
+      - Platform fee (updated tiers): ${platformFee} cents ($${platformFee/100})
       - Total customer pays: ${totalPriceInCents} cents ($${totalPriceInCents/100})
-      - Fee percentage: ${((platformFee / basePriceInCents) * 100).toFixed(1)}%`);
+      - Fee percentage: ${((platformFee / basePriceInCents) * 100).toFixed(2)}%`);
 
     if (totalPriceInCents < 50) {
       console.error("Total price too low for Stripe (minimum $0.50):", totalPriceInCents);
@@ -217,7 +231,7 @@ serve(async (req) => {
             
             if (connectedAccountChargesEnabled) {
               useStripeConnect = true;
-              console.log('Using Connect account for tiered fee model:', connectedStripeAccountId);
+              console.log('Using Connect account for updated tiered fee model:', connectedStripeAccountId);
             } else {
               console.log('Connected account cannot accept charges, falling back to platform');
             }
@@ -235,7 +249,7 @@ serve(async (req) => {
       console.log('No company_id found in job, using platform processing');
     }
 
-    console.log("Creating Stripe checkout session with tiered fee model");
+    console.log("Creating Stripe checkout session with updated tiered fee model");
 
     // Create checkout session configuration
     const sessionConfig = {
@@ -248,7 +262,7 @@ serve(async (req) => {
               name: job.job_name || 'Service',
               description: `Service for ${job.client_name || 'Client'}`,
             },
-            unit_amount: totalPriceInCents, // Customer pays base + tiered fee
+            unit_amount: totalPriceInCents, // Customer pays base + updated tiered fee
           },
           quantity: 1,
         },
@@ -263,21 +277,21 @@ serve(async (req) => {
         platform_fee: (platformFee / 100).toString(),
         total_price: (totalPriceInCents / 100).toString(),
         company_id: job.company_id || '',
-        routing_method: useStripeConnect ? 'stripe_connect_tiered' : 'platform_only',
+        routing_method: useStripeConnect ? 'stripe_connect_updated_tiers' : 'platform_only',
       },
     };
 
-    // Add payment intent data for Stripe Connect tiered fee model
+    // Add payment intent data for Stripe Connect updated tiered fee model
     if (useStripeConnect && platformFee > 0) {
       sessionConfig.payment_intent_data = {
-        application_fee_amount: platformFee, // Platform gets the tiered fee
+        application_fee_amount: platformFee, // Platform gets the updated tiered fee
         transfer_data: {
           destination: connectedStripeAccountId, // Connected account gets base price
         },
       };
-      console.log('Using Stripe Connect Tiered Fee Model:');
+      console.log('Using Stripe Connect Updated Tiered Fee Model:');
       console.log('- Connected account receives:', basePriceInCents, 'cents');
-      console.log('- Platform receives tiered fee:', platformFee, 'cents');
+      console.log('- Platform receives updated tiered fee:', platformFee, 'cents');
     }
 
     try {
@@ -316,11 +330,11 @@ serve(async (req) => {
             base_price: basePriceInCents / 100,
             platform_fee: platformFee / 100,
             total_customer_pays: totalPriceInCents / 100,
-            fee_percentage: ((platformFee / basePriceInCents) * 100).toFixed(1) + '%',
+            fee_percentage: ((platformFee / basePriceInCents) * 100).toFixed(2) + '%',
             connect_used: useStripeConnect
           },
           routing_info: {
-            method: useStripeConnect ? 'stripe_connect_tiered' : 'platform_only',
+            method: useStripeConnect ? 'stripe_connect_updated_tiers' : 'platform_only',
             destination_account: useStripeConnect ? connectedStripeAccountId : 'platform',
             fee_amount_cents: platformFee,
             base_amount_cents: basePriceInCents,
