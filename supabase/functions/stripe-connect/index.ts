@@ -19,7 +19,13 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       console.error("No authorization header provided");
-      throw new Error("No authorization header provided");
+      return new Response(JSON.stringify({ 
+        success: false,
+        error: "No authorization header provided" 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+      });
     }
 
     // Initialize Supabase client
@@ -34,7 +40,13 @@ serve(async (req) => {
     
     if (userError || !userData.user?.email) {
       console.error("User authentication error:", userError);
-      throw new Error("User not authenticated");
+      return new Response(JSON.stringify({ 
+        success: false,
+        error: "User not authenticated" 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+      });
     }
 
     const user = userData.user;
@@ -44,7 +56,13 @@ serve(async (req) => {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
       console.error("STRIPE_SECRET_KEY not found");
-      throw new Error("Stripe configuration missing");
+      return new Response(JSON.stringify({ 
+        success: false,
+        error: "Stripe configuration missing" 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500,
+      });
     }
 
     // Initialize Stripe
@@ -86,7 +104,10 @@ serve(async (req) => {
 
     if (updateError) {
       console.error('Error updating profile with Stripe account:', updateError);
+      // Don't fail the whole process for this error, just log it
     }
+
+    console.log("Stripe Connect process completed successfully");
 
     return new Response(JSON.stringify({ 
       success: true,
@@ -101,7 +122,7 @@ serve(async (req) => {
     console.error("Stripe connect error:", error);
     return new Response(JSON.stringify({ 
       success: false,
-      error: error.message 
+      error: error.message || "An unexpected error occurred"
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
