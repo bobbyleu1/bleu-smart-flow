@@ -149,8 +149,8 @@ export const ProfileTab = () => {
           </CardHeader>
           <CardContent>
             <CompanyIdManager 
-              currentCompanyId={profile.company_id} 
-              onCompanyIdUpdate={() => fetchProfile()}
+              userProfile={profile} 
+              onCompanyIdGenerated={fetchProfile}
             />
           </CardContent>
         </Card>
