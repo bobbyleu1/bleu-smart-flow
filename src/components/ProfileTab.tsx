@@ -91,7 +91,7 @@ export const ProfileTab = () => {
     
     setConnectingStripe(true);
     try {
-      const { data, error } = await supabase.functions.invoke('create-stripe-onboarding');
+      const { data, error } = await supabase.functions.invoke('stripe-connect');
       
       if (error) {
         console.error('Stripe Connect function error:', error);
