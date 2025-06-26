@@ -33,10 +33,10 @@ export const Auth = () => {
     
     try {
       // Call the ensure_user_profile function with proper parameter names
-      const { data, error } = await supabase.rpc('ensure_user_profile', {
+      const { data, error } = await supabase.rpc('ensure_user_profile' as any, {
         user_id: userId,
         user_email: userEmail
-      });
+      } as any);
 
       if (error) {
         console.error('Error ensuring user profile:', error);
