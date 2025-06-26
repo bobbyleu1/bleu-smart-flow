@@ -104,9 +104,10 @@ serve(async (req) => {
 
     console.log("Creating Stripe checkout session");
 
-    // Calculate job price in cents
-    const jobPriceCents = Math.round(job.price * 100);
-    console.log("Job price in cents:", jobPriceCents);
+    // Apply 5% platform fee and round to nearest cent
+    const jobPriceWithFee = Math.round(job.price * 1.05 * 100);
+    console.log("Original job price:", job.price);
+    console.log("Job price with 5% fee in cents:", jobPriceWithFee);
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
@@ -117,9 +118,9 @@ serve(async (req) => {
             currency: 'usd',
             product_data: {
               name: job.job_name,
-              description: `Service for ${job.client_name}`,
+              description: `Service for ${job.client_name} (includes 5% platform fee)`,
             },
-            unit_amount: jobPriceCents,
+            unit_amount: jobPriceWithFee,
           },
           quantity: 1,
         },
@@ -130,6 +131,8 @@ serve(async (req) => {
       metadata: {
         job_id: jobId,
         client_name: job.client_name,
+        original_price: job.price.toString(),
+        platform_fee_percentage: "5",
       },
     });
 
