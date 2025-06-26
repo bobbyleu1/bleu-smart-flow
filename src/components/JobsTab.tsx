@@ -210,51 +210,83 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
       }
 
       console.log('Payment link generated successfully:', data);
+      console.log('Generated payment URL:', data.url);
 
-      // Find the job to get phone number and details
-      const job = jobs.find(j => j.id === jobId);
-      
-      if (job && job.phone_number && data.url) {
-        console.log('Job has phone number, sending SMS notification');
-        
-        const smsMessage = formatPaymentLinkSMS(
-          data.url,
-          job.job_name || job.title,
-          job.client_name || 'Valued Client',
-          job.price
-        );
-
-        const smsResult = await sendSMSNotification({
-          phoneNumber: job.phone_number,
-          message: smsMessage,
-          jobId: jobId
-        });
-
-        if (smsResult.success) {
-          toast({
-            title: "Success",
-            description: "Payment link generated and SMS sent successfully!",
-          });
-        } else {
-          toast({
-            title: "Partial Success",
-            description: "Payment link generated but SMS failed to send.",
-            variant: "destructive",
-          });
-        }
-      } else {
+      if (data.success && data.url) {
+        // Show success toast with the payment link and copy functionality
         toast({
-          title: "Success",
-          description: "Payment link generated successfully!",
+          title: "Payment Link Generated!",
+          description: (
+            <div className="space-y-2">
+              <p className="text-sm">Link created successfully</p>
+              <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                <code className="text-xs flex-1 break-all">{data.url}</code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(data.url);
+                      toast({
+                        title: "Copied!",
+                        description: "Payment link copied to clipboard",
+                      });
+                    } catch (err) {
+                      console.error('Failed to copy:', err);
+                      toast({
+                        title: "Copy Failed",
+                        description: "Could not copy to clipboard",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                  className="flex-shrink-0"
+                >
+                  <Copy className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+          ),
+          duration: 10000, // Show for 10 seconds
         });
-      }
 
-      await fetchJobs();
+        // Find the job to get phone number and details for SMS
+        const job = jobs.find(j => j.id === jobId);
+        
+        if (job && job.phone_number) {
+          console.log('Job has phone number, sending SMS notification');
+          
+          const smsMessage = formatPaymentLinkSMS(
+            data.url,
+            job.job_name || job.title,
+            job.client_name || 'Valued Client',
+            job.price
+          );
+
+          const smsResult = await sendSMSNotification({
+            phoneNumber: job.phone_number,
+            message: smsMessage,
+            jobId: jobId
+          });
+
+          if (!smsResult.success) {
+            toast({
+              title: "SMS Failed",
+              description: "Payment link generated but SMS could not be sent",
+              variant: "destructive",
+            });
+          }
+        }
+
+        await fetchJobs();
+      } else {
+        throw new Error(data.error || "Failed to generate payment link");
+      }
     } catch (error: any) {
       console.error('Failed to generate payment link:', error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to generate payment link",
+        title: "Error generating link. Try again later or check job details.",
+        description: error.message || "An unexpected error occurred",
         variant: "destructive",
       });
     } finally {
