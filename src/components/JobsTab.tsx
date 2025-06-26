@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ExternalLink, CheckCircle, Clock, Link, DollarSign, Building } from "lucide-react";
+import { Plus, ExternalLink, CheckCircle, Clock, Link, DollarSign, Building, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateJobDialog } from "./CreateJobDialog";
@@ -22,11 +22,18 @@ interface Job {
 
 interface UserProfile {
   company_id: string | null;
+  is_demo?: boolean;
+  stripe_connected?: boolean;
 }
 
-export const JobsTab = () => {
+interface JobsTabProps {
+  userProfile?: UserProfile | null;
+  isDemoMode?: boolean;
+}
+
+export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: JobsTabProps) => {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(propUserProfile || null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'completed'>('all');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -34,6 +41,11 @@ export const JobsTab = () => {
   const { toast } = useToast();
 
   const fetchUserProfile = async () => {
+    if (propUserProfile) {
+      setUserProfile(propUserProfile);
+      return propUserProfile;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -44,7 +56,7 @@ export const JobsTab = () => {
       // Try to get existing profile
       const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('company_id')
+        .select('company_id, is_demo, stripe_connected')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -74,14 +86,15 @@ export const JobsTab = () => {
           throw insertError;
         }
 
-        setUserProfile({ company_id: newCompanyId });
+        const createdProfile = { company_id: newCompanyId };
+        setUserProfile(createdProfile);
         
         toast({
           title: "Profile Created",
           description: "Your profile has been set up successfully!",
         });
         
-        return { company_id: newCompanyId };
+        return createdProfile;
       }
 
       setUserProfile(profileData);
@@ -144,9 +157,18 @@ export const JobsTab = () => {
     };
     
     initialize();
-  }, []);
+  }, [propUserProfile]);
 
   const generatePaymentLink = async (jobId: string) => {
+    if (isDemoMode) {
+      toast({
+        title: "Demo Mode",
+        description: "Payment links are disabled in demo mode",
+        variant: "destructive",
+      });
+      return;
+    }
+
     console.log('Generating payment link for job:', jobId);
     setGeneratingLinks(prev => new Set(prev).add(jobId));
     
@@ -202,6 +224,23 @@ export const JobsTab = () => {
     }
   };
 
+  const copyJobId = async (jobId: string) => {
+    try {
+      await navigator.clipboard.writeText(jobId);
+      toast({
+        title: "Copied",
+        description: "Job ID copied to clipboard!",
+      });
+    } catch (error) {
+      console.error('Failed to copy job ID:', error);
+      toast({
+        title: "Error",
+        description: "Failed to copy job ID",
+        variant: "destructive",
+      });
+    }
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'paid':
@@ -218,13 +257,13 @@ export const JobsTab = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'paid':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-100 text-green-800 border-green-200';
       case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'completed':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-100 text-blue-800 border-blue-200';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
@@ -267,14 +306,14 @@ export const JobsTab = () => {
         </div>
         <Button 
           onClick={() => setShowCreateDialog(true)}
-          className="bg-blue-600 hover:bg-blue-700"
+          className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
         >
           <Plus className="w-4 h-4 mr-2" />
           New Job
         </Button>
       </div>
 
-      {/* Filter Tabs */}
+      {/* Filter Tabs - Mobile Friendly */}
       <div className="flex flex-wrap gap-2">
         {(['all', 'pending', 'paid', 'completed'] as const).map((status) => (
           <Button
@@ -282,28 +321,41 @@ export const JobsTab = () => {
             variant={filter === status ? "default" : "outline"}
             size="sm"
             onClick={() => setFilter(status)}
-            className={filter === status ? "bg-blue-600 hover:bg-blue-700" : ""}
+            className={`${filter === status ? "bg-blue-600 hover:bg-blue-700" : ""} min-w-0 flex-shrink-0`}
           >
             {status.charAt(0).toUpperCase() + status.slice(1)}
           </Button>
         ))}
       </div>
 
-      {/* Jobs Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {/* Jobs Grid - Responsive */}
+      <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {filteredJobs.map((job) => (
           <Card key={job.id} className="hover:shadow-md transition-shadow">
             <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="text-lg">{job.job_name}</CardTitle>
-                  <CardDescription className="mt-1">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="text-lg truncate">{job.job_name}</CardTitle>
+                  <CardDescription className="mt-1 truncate">
                     Client: {job.client_name}
                   </CardDescription>
+                  <div className="flex items-center gap-2 mt-2">
+                    <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 font-mono">
+                      {job.id.slice(0, 8)}...
+                    </code>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyJobId(job.id)}
+                      className="h-6 w-6 p-0"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   {getStatusIcon(job.status)}
-                  <Badge className={getStatusColor(job.status)}>
+                  <Badge className={`${getStatusColor(job.status)} text-xs`}>
                     {job.status === 'paid' ? '✅ Paid' : job.status}
                   </Badge>
                 </div>
@@ -333,15 +385,16 @@ export const JobsTab = () => {
                           size="sm"
                           variant="outline"
                           onClick={() => window.open(job.payment_url!, '_blank')}
-                          className="flex-1"
+                          className="flex-1 min-w-0"
                         >
-                          <ExternalLink className="w-4 h-4 mr-1" />
-                          Open Payment Link
+                          <ExternalLink className="w-4 h-4 mr-1 flex-shrink-0" />
+                          <span className="truncate">Open Link</span>
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => copyPaymentLink(job.payment_url!)}
+                          className="flex-shrink-0"
                         >
                           <Link className="w-4 h-4" />
                         </Button>
@@ -354,11 +407,12 @@ export const JobsTab = () => {
                     <Button
                       size="sm"
                       onClick={() => generatePaymentLink(job.id)}
-                      disabled={generatingLinks.has(job.id)}
+                      disabled={generatingLinks.has(job.id) || isDemoMode}
                       className="w-full bg-blue-600 hover:bg-blue-700"
                     >
                       <DollarSign className="w-4 h-4 mr-1" />
-                      {generatingLinks.has(job.id) ? "Generating..." : "Generate Payment Link"}
+                      {generatingLinks.has(job.id) ? "Generating..." : 
+                       isDemoMode ? "Demo Mode" : "Generate Payment Link"}
                     </Button>
                   )}
                 </div>
@@ -372,7 +426,10 @@ export const JobsTab = () => {
         <Card className="p-12 text-center">
           <CardContent>
             <p className="text-gray-500 mb-4">No jobs found</p>
-            <Button onClick={() => setShowCreateDialog(true)}>
+            <Button 
+              onClick={() => setShowCreateDialog(true)}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
               <Plus className="w-4 h-4 mr-2" />
               Create Your First Job
             </Button>
@@ -385,6 +442,7 @@ export const JobsTab = () => {
         onOpenChange={setShowCreateDialog}
         onJobCreated={fetchJobs}
         userProfile={userProfile}
+        isDemoMode={isDemoMode}
       />
     </div>
   );

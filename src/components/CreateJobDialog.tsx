@@ -7,8 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { AlertTriangle } from "lucide-react";
 
 interface Client {
   id: string;
@@ -18,6 +20,7 @@ interface Client {
 
 interface UserProfile {
   company_id: string | null;
+  is_demo?: boolean;
 }
 
 interface CreateJobDialogProps {
@@ -25,9 +28,16 @@ interface CreateJobDialogProps {
   onOpenChange: (open: boolean) => void;
   onJobCreated: () => void;
   userProfile: UserProfile | null;
+  isDemoMode?: boolean;
 }
 
-export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile }: CreateJobDialogProps) => {
+export const CreateJobDialog = ({ 
+  open, 
+  onOpenChange, 
+  onJobCreated, 
+  userProfile, 
+  isDemoMode = false 
+}: CreateJobDialogProps) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingClients, setLoadingClients] = useState(false);
@@ -36,7 +46,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
     client_id: "",
     price: "",
     description: "",
-    scheduled_date: "",
+    scheduled_date: new Date().toISOString().split('T')[0], // Today's date
     is_recurring: false,
     frequency: "weekly",
   });
@@ -81,6 +91,19 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
     if (open && userProfile?.company_id) {
       fetchClients();
     }
+    
+    // Reset form when dialog opens
+    if (open) {
+      setFormData({
+        title: "",
+        client_id: "",
+        price: "",
+        description: "",
+        scheduled_date: new Date().toISOString().split('T')[0],
+        is_recurring: false,
+        frequency: "weekly",
+      });
+    }
   }, [open, userProfile?.company_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -108,7 +131,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
         scheduled_date: formData.scheduled_date,
         is_recurring: formData.is_recurring,
         frequency: formData.is_recurring ? formData.frequency : null,
-        status: 'pending' as const
+        status: isDemoMode ? 'test' : 'pending' as const
       };
 
       console.log('Inserting job data:', jobData);
@@ -127,7 +150,9 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
 
       toast({
         title: "Success",
-        description: "Job created successfully",
+        description: isDemoMode 
+          ? "Demo job created successfully (no payment link will be generated)" 
+          : "Job created successfully",
       });
 
       setFormData({
@@ -135,7 +160,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
         client_id: "",
         price: "",
         description: "",
-        scheduled_date: "",
+        scheduled_date: new Date().toISOString().split('T')[0],
         is_recurring: false,
         frequency: "weekly",
       });
@@ -161,13 +186,22 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create New Job</DialogTitle>
           <DialogDescription>
             Add a new service job for your client
           </DialogDescription>
         </DialogHeader>
+
+        {isDemoMode && (
+          <Alert className="border-yellow-300 bg-yellow-50">
+            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+            <AlertDescription className="text-yellow-800">
+              Demo Mode: Jobs created will be marked as test jobs and won't generate real payment links.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -178,6 +212,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               placeholder="e.g., Weekly Lawn Care"
               required
+              className="mt-1"
             />
           </div>
 
@@ -188,7 +223,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
               onValueChange={(value) => setFormData({ ...formData, client_id: value })}
               required
             >
-              <SelectTrigger>
+              <SelectTrigger className="mt-1">
                 <SelectValue placeholder={loadingClients ? "Loading clients..." : "Select a client"} />
               </SelectTrigger>
               <SelectContent>
@@ -201,7 +236,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
             </Select>
             {clients.length === 0 && !loadingClients && (
               <p className="text-sm text-gray-500 mt-1">
-                No clients found. Please add a client first.
+                No clients found. Please add a client first in the Clients tab.
               </p>
             )}
           </div>
@@ -217,6 +252,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
               onChange={(e) => setFormData({ ...formData, price: e.target.value })}
               placeholder="0.00"
               required
+              className="mt-1"
             />
           </div>
 
@@ -228,6 +264,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
               value={formData.scheduled_date}
               onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
               required
+              className="mt-1"
             />
           </div>
 
@@ -239,6 +276,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Describe the job details..."
               rows={3}
+              className="mt-1"
             />
           </div>
 
@@ -259,7 +297,7 @@ export const CreateJobDialog = ({ open, onOpenChange, onJobCreated, userProfile 
                 onValueChange={(value) => setFormData({ ...formData, frequency: value })}
                 required
               >
-                <SelectTrigger>
+                <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Select frequency" />
                 </SelectTrigger>
                 <SelectContent>

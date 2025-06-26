@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -8,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export const Auth = () => {
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
@@ -15,6 +15,9 @@ export const Auth = () => {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Set page title
+    document.title = "Smart Invoice - Login";
+    
     // Check if this is an invite link
     const urlParams = new URLSearchParams(window.location.search);
     const companyId = urlParams.get('company_id');
@@ -47,6 +50,62 @@ export const Auth = () => {
     }
 
     console.log('Profile updated for invite successfully');
+  };
+
+  const handleDemoMode = async () => {
+    setDemoLoading(true);
+    try {
+      // Sign in with demo account
+      const { error } = await supabase.auth.signInWithPassword({
+        email: "demo@smartinvoice.com",
+        password: "demo123456",
+      });
+      
+      if (error) {
+        // If demo account doesn't exist, create it
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: "demo@smartinvoice.com",
+          password: "demo123456",
+        });
+        
+        if (signUpError) {
+          throw signUpError;
+        }
+        
+        // Create demo profile if user was created
+        if (signUpData.user) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .upsert({
+              id: signUpData.user.id,
+              email: "demo@smartinvoice.com",
+              company_id: "demo-company-123",
+              role: 'invoice_owner',
+              is_demo: true
+            });
+            
+          if (profileError) {
+            console.error('Demo profile creation error:', profileError);
+          }
+        }
+      }
+      
+      toast({
+        title: "Demo Mode Activated",
+        description: "Welcome to Smart Invoice demo! Payments are disabled in demo mode.",
+      });
+    } catch (error: any) {
+      console.error('Demo mode error:', error);
+      toast({
+        title: "Demo Error",
+        description: "Failed to start demo mode. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setDemoLoading(false);
+    }
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -117,14 +176,14 @@ export const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">
-            <span className="text-white font-bold text-xl">B</span>
+            <span className="text-white font-bold text-xl">S</span>
           </div>
           <CardTitle className="text-2xl font-bold text-blue-600">
-            Bleu Smart Invoice
+            Smart Invoice
           </CardTitle>
           <CardDescription>
             {inviteCompanyId 
@@ -135,7 +194,7 @@ export const Auth = () => {
             }
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <form onSubmit={handleAuth} className="space-y-4">
             <div>
               <Input
@@ -144,6 +203,7 @@ export const Auth = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                className="h-11"
               />
             </div>
             <div>
@@ -153,29 +213,53 @@ export const Auth = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                className="h-11"
               />
             </div>
             <Button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700"
+              className="w-full bg-blue-600 hover:bg-blue-700 h-11"
               disabled={loading}
             >
               {loading ? "Loading..." : isSignUp ? "Create Account" : "Sign In"}
             </Button>
           </form>
+          
           {!inviteCompanyId && (
-            <div className="mt-4 text-center">
+            <>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white px-2 text-muted-foreground">Or</span>
+                </div>
+              </div>
+              
               <Button
-                variant="link"
-                onClick={() => setIsSignUp(!isSignUp)}
-                className="text-blue-600"
+                type="button"
+                variant="outline"
+                onClick={handleDemoMode}
+                disabled={demoLoading}
+                className="w-full h-11"
               >
-                {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
+                {demoLoading ? "Starting Demo..." : "💡 Try Demo Mode"}
               </Button>
-            </div>
+              
+              <div className="text-center">
+                <Button
+                  variant="link"
+                  onClick={() => setIsSignUp(!isSignUp)}
+                  className="text-blue-600"
+                >
+                  {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
+                </Button>
+              </div>
+            </>
           )}
+          
           {inviteCompanyId && (
-            <div className="mt-4 text-center">
+            <div className="text-center">
               <p className="text-sm text-gray-600">
                 You've been invited to join a company team
               </p>
