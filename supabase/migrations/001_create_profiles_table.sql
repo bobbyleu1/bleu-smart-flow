@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   role TEXT DEFAULT 'invoice_owner',
   is_demo BOOLEAN DEFAULT FALSE,
   stripe_connected BOOLEAN DEFAULT FALSE,
+  stripe_account_id TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -35,3 +36,6 @@ CREATE INDEX IF NOT EXISTS profiles_company_id_idx ON public.profiles(company_id
 
 -- Create an index on email for better performance
 CREATE INDEX IF NOT EXISTS profiles_email_idx ON public.profiles(email);
+
+-- Create an index on stripe_account_id for better performance
+CREATE INDEX IF NOT EXISTS profiles_stripe_account_id_idx ON public.profiles(stripe_account_id);

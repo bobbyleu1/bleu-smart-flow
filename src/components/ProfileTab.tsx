@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ interface Profile {
   role: string;
   is_demo: boolean;
   stripe_connected: boolean;
+  stripe_account_id?: string;
   created_at: string;
 }
 
@@ -24,11 +26,32 @@ export const ProfileTab = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [connectingStripe, setConnectingStripe] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     document.title = "Smart Invoice - Account";
     fetchProfile();
+    
+    // Check for Stripe success/refresh URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('stripe_success') === 'true') {
+      toast({
+        title: "Success",
+        description: "Stripe account connected successfully!",
+      });
+      checkStripeStatus();
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (urlParams.get('stripe_refresh') === 'true') {
+      toast({
+        title: "Setup Incomplete",
+        description: "Please complete your Stripe account setup.",
+        variant: "destructive",
+      });
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   }, []);
 
   const fetchProfile = async () => {
@@ -41,7 +64,7 @@ export const ProfileTab = () => {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, company_id, role, is_demo, stripe_connected, created_at')
+        .select('id, email, company_id, role, is_demo, stripe_connected, stripe_account_id, created_at')
         .eq('id', user.id)
         .single();
 
@@ -60,6 +83,52 @@ export const ProfileTab = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const connectStripe = async () => {
+    if (!profile) return;
+    
+    setConnectingStripe(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('stripe-connect');
+      
+      if (error) {
+        throw error;
+      }
+
+      if (data.url) {
+        // Redirect to Stripe Connect onboarding
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error('Error connecting Stripe:', error);
+      toast({
+        title: "Error",
+        description: "Failed to connect Stripe account. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setConnectingStripe(false);
+    }
+  };
+
+  const checkStripeStatus = async () => {
+    if (!profile) return;
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('check-stripe-status');
+      
+      if (error) {
+        throw error;
+      }
+
+      if (data.connected && !profile.stripe_connected) {
+        // Refresh profile to get updated status
+        await fetchProfile();
+      }
+    } catch (error) {
+      console.error('Error checking Stripe status:', error);
     }
   };
 
@@ -187,8 +256,29 @@ export const ProfileTab = () => {
                     <p className="text-sm text-orange-800 mb-2">
                       ⚠️ Connect your Stripe account to start receiving payments from clients.
                     </p>
-                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
-                      Connect Stripe
+                    <Button 
+                      size="sm" 
+                      onClick={connectStripe}
+                      disabled={connectingStripe}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      {connectingStripe ? "Connecting..." : "Connect Stripe"}
+                    </Button>
+                  </div>
+                )}
+
+                {profile.stripe_connected && (
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm text-green-800 mb-2">
+                      ✅ Your Stripe account is connected and ready to receive payments.
+                    </p>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={checkStripeStatus}
+                      className="text-green-600 border-green-300"
+                    >
+                      Refresh Status
                     </Button>
                   </div>
                 )}
