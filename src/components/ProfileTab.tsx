@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,16 +86,20 @@ export const ProfileTab = () => {
   };
 
   const connectStripe = async () => {
+    console.log('Connect Stripe button clicked');
     if (!profile) return;
     
     setConnectingStripe(true);
     try {
-      const { data, error } = await supabase.functions.invoke('stripe-connect');
+      const { data, error } = await supabase.functions.invoke('create-stripe-onboarding');
       
       if (error) {
+        console.error('Stripe Connect function error:', error);
         throw error;
       }
 
+      console.log('Stripe Connect function success:', data);
+      
       if (data.url) {
         // Redirect to Stripe Connect onboarding
         window.location.href = data.url;
