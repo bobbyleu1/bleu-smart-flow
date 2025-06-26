@@ -1,10 +1,10 @@
-
 import { useState, useEffect } from "react";
 import { Session } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 import { JobsTab } from "./JobsTab";
 import { ClientsTab } from "./ClientsTab";
 import { PaymentsTab } from "./PaymentsTab";
@@ -26,6 +26,8 @@ export const Dashboard = ({ session }: DashboardProps) => {
   const [activeTab, setActiveTab] = useState("jobs");
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [connectingStripe, setConnectingStripe] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchUserProfile();
@@ -51,6 +53,97 @@ export const Dashboard = ({ session }: DashboardProps) => {
       setUserProfile({ company_id: null, is_demo: false, stripe_connected: false });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const connectStripe = async () => {
+    console.log('Connect Stripe from banner clicked');
+    if (!userProfile) {
+      console.error('No profile found');
+      toast({
+        title: "Error",
+        description: "Profile not loaded. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setConnectingStripe(true);
+    try {
+      console.log('Invoking stripe-connect function from banner...');
+      
+      // Get the current user's token
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession?.access_token) {
+        throw new Error('No active session found');
+      }
+
+      const { data, error } = await supabase.functions.invoke('stripe-connect', {
+        headers: {
+          Authorization: `Bearer ${currentSession.access_token}`,
+        },
+      });
+      
+      console.log('Banner function response:', { data, error });
+      
+      if (error) {
+        console.error('Stripe Connect function error from banner:', error);
+        toast({
+          title: "Connection Error",
+          description: `Failed to connect to Stripe: ${error.message}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!data) {
+        console.error('No data returned from function');
+        toast({
+          title: "Error",
+          description: "No response from Stripe connection service.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Check if the response indicates an error
+      if (data.success === false) {
+        console.error('Function returned error from banner:', data.error);
+        toast({
+          title: "Stripe Connection Failed",
+          description: data.error || "Failed to connect Stripe account",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log('Stripe Connect function success from banner:', data);
+      
+      if (data.url) {
+        console.log('Redirecting to Stripe onboarding from banner:', data.url);
+        toast({
+          title: "Redirecting to Stripe",
+          description: "Opening Stripe account setup...",
+        });
+        // Redirect to Stripe Connect onboarding
+        window.location.href = data.url;
+      } else {
+        console.error('No URL in successful response from banner:', data);
+        toast({
+          title: "Setup Error",
+          description: "Stripe account was created but no setup URL was provided.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error connecting Stripe from banner:', error);
+      toast({
+        title: "Connection Failed",
+        description: `Failed to connect Stripe account: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setConnectingStripe(false);
     }
   };
 
@@ -123,8 +216,13 @@ export const Dashboard = ({ session }: DashboardProps) => {
               <AlertTriangle className="h-4 w-4 text-orange-600" />
               <AlertDescription className="text-orange-800">
                 ⚠️ <strong>Please connect your Stripe account to start receiving payments.</strong> 
-                <Button variant="link" className="p-0 ml-2 h-auto text-orange-600 underline">
-                  Connect Stripe
+                <Button 
+                  variant="link" 
+                  className="p-0 ml-2 h-auto text-orange-600 underline"
+                  onClick={connectStripe}
+                  disabled={connectingStripe}
+                >
+                  {connectingStripe ? "Redirecting..." : "Connect Stripe"}
                 </Button>
               </AlertDescription>
             </Alert>
