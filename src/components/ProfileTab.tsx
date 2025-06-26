@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,22 +88,66 @@ export const ProfileTab = () => {
 
   const connectStripe = async () => {
     console.log('Connect Stripe button clicked');
-    if (!profile) return;
+    if (!profile) {
+      console.error('No profile found');
+      toast({
+        title: "Error",
+        description: "Profile not loaded. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     setConnectingStripe(true);
     try {
+      console.log('Invoking stripe-connect function...');
       const { data, error } = await supabase.functions.invoke('stripe-connect');
+      
+      console.log('Function response:', { data, error });
       
       if (error) {
         console.error('Stripe Connect function error:', error);
-        throw error;
+        toast({
+          title: "Error",
+          description: `Stripe connection failed: ${error.message}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!data) {
+        console.error('No data returned from function');
+        toast({
+          title: "Error",
+          description: "No response from Stripe connection service.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!data.success) {
+        console.error('Function returned error:', data.error);
+        toast({
+          title: "Error",
+          description: data.error || "Failed to connect Stripe account",
+          variant: "destructive",
+        });
+        return;
       }
 
       console.log('Stripe Connect function success:', data);
       
       if (data.url) {
+        console.log('Redirecting to:', data.url);
         // Redirect to Stripe Connect onboarding
         window.location.href = data.url;
+      } else {
+        console.error('No URL in response');
+        toast({
+          title: "Error",
+          description: "No setup URL received from Stripe.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Error connecting Stripe:', error);

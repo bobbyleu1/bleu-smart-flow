@@ -14,8 +14,11 @@ serve(async (req) => {
   }
 
   try {
+    console.log("Stripe Connect function started");
+    
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
+      console.error("No authorization header provided");
       throw new Error("No authorization header provided");
     }
 
@@ -30,14 +33,22 @@ serve(async (req) => {
     const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
     
     if (userError || !userData.user?.email) {
+      console.error("User authentication error:", userError);
       throw new Error("User not authenticated");
     }
 
     const user = userData.user;
     console.log("Creating Stripe Connect account for user:", user.email);
 
+    // Check Stripe key
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeKey) {
+      console.error("STRIPE_SECRET_KEY not found");
+      throw new Error("Stripe configuration missing");
+    }
+
     // Initialize Stripe
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
+    const stripe = new Stripe(stripeKey, {
       apiVersion: "2023-10-16",
     });
 
@@ -54,7 +65,7 @@ serve(async (req) => {
     console.log("Created Stripe account:", account.id);
 
     // Create account link for onboarding
-    const origin = req.headers.get("origin") || "http://localhost:5173";
+    const origin = req.headers.get("origin") || "https://eezaljhphekuchbqgkth.supabase.co";
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
       refresh_url: `${origin}/profile?stripe_refresh=true`,
@@ -64,7 +75,7 @@ serve(async (req) => {
 
     console.log("Created account link:", accountLink.url);
 
-    // Update user profile with Stripe account ID (but not connected yet)
+    // Update user profile with Stripe account ID
     const { error: updateError } = await supabaseClient
       .from('profiles')
       .update({ 
@@ -78,6 +89,7 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ 
+      success: true,
       url: accountLink.url,
       account_id: account.id 
     }), {
@@ -87,7 +99,10 @@ serve(async (req) => {
 
   } catch (error) {
     console.error("Stripe connect error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: error.message 
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });
