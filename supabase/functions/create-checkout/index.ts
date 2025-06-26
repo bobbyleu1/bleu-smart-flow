@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.21.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -127,42 +128,39 @@ serve(async (req) => {
 
     // Fetch the company's Stripe account ID from profiles table
     let companyStripeAccountId = null;
-    let shouldUseStripeConnect = false;
     let useConnectedAccount = false;
     
     if (job.company_id) {
       console.log("Fetching company Stripe account for company_id:", job.company_id);
       const { data: companyProfile, error: profileError } = await supabaseAdmin
         .from('profiles')
-        .select('stripe_account_id, stripe_connected')
+        .select('stripe_account_id')
         .eq('company_id', job.company_id)
         .eq('stripe_connected', true)
         .single();
 
       if (profileError) {
         console.warn("Error fetching company profile or company not Stripe connected:", profileError);
-        console.log("ROUTING DECISION: Using platform account for payment processing");
+        console.log("Using platform account, skipping transfer and fee");
       } else if (companyProfile?.stripe_account_id) {
         companyStripeAccountId = companyProfile.stripe_account_id;
         console.log("Found company Stripe account:", companyStripeAccountId);
         
         // Check if company account is different from platform account
         if (companyStripeAccountId === PLATFORM_STRIPE_ACCOUNT_ID) {
-          console.log("ROUTING DECISION: Company account matches platform account - using platform-only processing");
-          shouldUseStripeConnect = false;
+          console.log("Using platform account, skipping transfer and fee");
           useConnectedAccount = false;
         } else {
-          console.log("ROUTING DECISION: Company account is different from platform - using Stripe Connect");
-          shouldUseStripeConnect = true;
+          console.log("Using connected account for payment");
           useConnectedAccount = true;
         }
       } else {
-        console.warn("Company does not have Stripe account connected, using platform account");
-        console.log("ROUTING DECISION: Using platform account (no connected account)");
+        console.warn("Company does not have Stripe account connected");
+        console.log("Using platform account, skipping transfer and fee");
       }
     } else {
-      console.log("Job does not have company_id, using platform account");
-      console.log("ROUTING DECISION: Using platform account (no company_id)");
+      console.log("Job does not have company_id");
+      console.log("Using platform account, skipping transfer and fee");
     }
 
     // Safe price handling
@@ -193,21 +191,19 @@ serve(async (req) => {
 
     console.log("Creating Stripe checkout session");
 
-    // Convert to cents and calculate platform fee (5%)
+    // Convert to cents and calculate platform fee (5% only for connected accounts)
     const jobPriceInCents = Math.round(jobPrice * 100);
-    const platformFeeInCents = shouldUseStripeConnect ? Math.round(jobPriceInCents * 0.05) : 0;
-    const totalAmountInCents = jobPriceInCents;
+    const platformFeeInCents = useConnectedAccount ? Math.round(jobPrice * 0.05 * 100) : 0;
 
     console.log("PAYMENT DETAILS:");
     console.log("- Original job price:", jobPrice);
     console.log("- Job price in cents:", jobPriceInCents);
     console.log("- Platform fee (5%) in cents:", platformFeeInCents);
-    console.log("- Total amount in cents:", totalAmountInCents);
-    console.log("- Using Stripe Connect:", shouldUseStripeConnect);
+    console.log("- Using connected account:", useConnectedAccount);
     console.log("- Target account:", useConnectedAccount ? companyStripeAccountId : "Platform account");
 
-    if (totalAmountInCents < 50) {
-      console.error("Price too low for Stripe (minimum $0.50):", totalAmountInCents);
+    if (jobPriceInCents < 50) {
+      console.error("Price too low for Stripe (minimum $0.50):", jobPriceInCents);
       return new Response(
         JSON.stringify({ 
           success: false,
@@ -231,7 +227,7 @@ serve(async (req) => {
               name: job.job_name || 'Service',
               description: `Service for ${job.client_name || 'Client'}`,
             },
-            unit_amount: totalAmountInCents,
+            unit_amount: jobPriceInCents,
           },
           quantity: 1,
         },
@@ -245,25 +241,25 @@ serve(async (req) => {
         original_price: jobPrice.toString(),
         platform_fee_amount: (platformFeeInCents / 100).toString(),
         company_id: job.company_id || '',
-        routing_method: shouldUseStripeConnect ? 'stripe_connect' : 'platform_only',
+        routing_method: useConnectedAccount ? 'connected_account' : 'platform_only',
       },
     };
 
     // Configure payment intent data based on routing method
-    if (shouldUseStripeConnect && useConnectedAccount && companyStripeAccountId) {
-      // Using Stripe Connect with connected account
+    if (useConnectedAccount && companyStripeAccountId) {
+      // Using connected account - include transfer and application fee
       sessionConfig.payment_intent_data = {
         application_fee_amount: platformFeeInCents,
         transfer_data: {
           destination: companyStripeAccountId,
         },
       };
-      console.log("SESSION CONFIG: Using Stripe Connect");
+      console.log("SESSION CONFIG: Using connected account");
       console.log("- Destination account:", companyStripeAccountId);
       console.log("- Application fee:", platformFeeInCents, "cents");
     } else {
-      // Using platform account only - no application fee needed
-      console.log("SESSION CONFIG: Using platform account only (no fees)");
+      // Using platform account only - no transfer or fee
+      console.log("SESSION CONFIG: Using platform account only (no fees or transfers)");
     }
 
     try {
@@ -298,7 +294,7 @@ serve(async (req) => {
           url: session.url,
           sessionId: session.id,
           routing_info: {
-            method: shouldUseStripeConnect ? 'stripe_connect' : 'platform_only',
+            method: useConnectedAccount ? 'connected_account' : 'platform_only',
             destination_account: useConnectedAccount ? companyStripeAccountId : 'platform',
             application_fee_cents: platformFeeInCents,
           }
