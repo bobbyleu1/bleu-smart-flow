@@ -18,9 +18,10 @@ interface Client {
 interface Job {
   id: string;
   title: string;
+  job_name: string | null;
   price: number;
   scheduled_date: string;
-  status: 'pending' | 'paid' | 'completed';
+  status: 'pending' | 'paid' | 'completed' | 'test' | null;
   payments: Payment[];
 }
 
@@ -29,7 +30,7 @@ interface Payment {
   amount: number;
   payment_status: string;
   paid_at: string | null;
-  payment_method: string;
+  payment_method: string | null;
 }
 
 interface ClientProfileProps {
@@ -45,7 +46,6 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
 
   const fetchClientData = async () => {
     try {
-      // Fetch client details
       const { data: clientData, error: clientError } = await supabase
         .from('clients')
         .select('*')
@@ -55,7 +55,6 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
       if (clientError) throw clientError;
       setClient(clientData);
 
-      // Fetch jobs for this client with payments
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select(`
@@ -82,7 +81,7 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
     fetchClientData();
   }, [clientId]);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | null) => {
     switch (status) {
       case 'paid':
         return 'bg-green-100 text-green-800';
@@ -111,7 +110,6 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="outline" size="sm" onClick={onBack}>
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -123,7 +121,6 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
         </div>
       </div>
 
-      {/* Client Info Card */}
       <Card>
         <CardHeader>
           <CardTitle>Contact Information</CardTitle>
@@ -152,7 +149,6 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
         </CardContent>
       </Card>
 
-      {/* Jobs List */}
       <div className="space-y-4">
         <h3 className="text-xl font-bold text-gray-900">Job History</h3>
         {jobs.length === 0 ? (
@@ -168,7 +164,7 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
                 <CardHeader className="pb-3">
                   <div className="flex justify-between items-start">
                     <div>
-                      <CardTitle className="text-lg">{job.title}</CardTitle>
+                      <CardTitle className="text-lg">{job.job_name || job.title}</CardTitle>
                       <CardDescription>
                         Scheduled: {new Date(job.scheduled_date).toLocaleDateString()}
                       </CardDescription>
@@ -178,7 +174,7 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
                         ${job.price.toFixed(2)}
                       </div>
                       <Badge className={getStatusColor(job.status)}>
-                        {job.status}
+                        {job.status || 'pending'}
                       </Badge>
                     </div>
                   </div>
@@ -191,9 +187,9 @@ export const ClientProfile = ({ clientId, onBack }: ClientProfileProps) => {
                         {job.payments.map((payment) => (
                           <div key={payment.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                             <div>
-                              <div className="font-medium">${payment.amount.toFixed(2)}</div>
+                              <div className="font-medium">${(payment.amount / 100).toFixed(2)}</div>
                               <div className="text-sm text-gray-600">
-                                {payment.payment_method} • {payment.payment_status}
+                                {payment.payment_method || 'card'} • {payment.payment_status}
                               </div>
                             </div>
                             <div className="text-sm text-gray-500">

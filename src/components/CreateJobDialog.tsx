@@ -46,7 +46,7 @@ export const CreateJobDialog = ({
     client_id: "",
     price: "",
     description: "",
-    scheduled_date: new Date().toISOString().split('T')[0], // Today's date
+    scheduled_date: new Date().toISOString().split('T')[0],
     is_recurring: false,
     frequency: "weekly",
   });
@@ -92,7 +92,6 @@ export const CreateJobDialog = ({
       fetchClients();
     }
     
-    // Reset form when dialog opens
     if (open) {
       setFormData({
         title: "",
@@ -109,7 +108,6 @@ export const CreateJobDialog = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate company_id
     if (!userProfile?.company_id) {
       console.error('No company_id available for job creation');
       toast({
@@ -120,7 +118,6 @@ export const CreateJobDialog = ({
       return;
     }
 
-    // Validate required fields
     if (!formData.title.trim()) {
       toast({
         title: "Error",
@@ -150,7 +147,6 @@ export const CreateJobDialog = ({
 
     setLoading(true);
 
-    // Get the selected client details
     const selectedClient = clients.find(client => client.id === formData.client_id);
     if (!selectedClient) {
       console.error('Selected client not found:', formData.client_id);
@@ -177,8 +173,8 @@ export const CreateJobDialog = ({
     });
 
     try {
-      // Prepare job data with all required fields
       const jobData = {
+        title: formData.title.trim(),
         job_name: formData.title.trim(),
         client_name: selectedClient.name,
         price: parseFloat(formData.price),
@@ -218,7 +214,6 @@ export const CreateJobDialog = ({
           : "Job created successfully",
       });
 
-      // Reset form
       setFormData({
         title: "",
         client_id: "",
@@ -252,7 +247,6 @@ export const CreateJobDialog = ({
     }
   };
 
-  // Don't render the dialog if there's no company_id
   if (!userProfile?.company_id) {
     return null;
   }

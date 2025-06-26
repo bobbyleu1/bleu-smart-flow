@@ -41,12 +41,14 @@ export const Dashboard = ({ session }: DashboardProps) => {
 
       if (error) {
         console.error('Error fetching profile:', error);
+        setUserProfile({ company_id: null, is_demo: false, stripe_connected: false });
         return;
       }
 
       setUserProfile(data || { company_id: null, is_demo: false, stripe_connected: false });
     } catch (error) {
       console.error('Failed to fetch profile:', error);
+      setUserProfile({ company_id: null, is_demo: false, stripe_connected: false });
     } finally {
       setLoading(false);
     }
@@ -69,7 +71,6 @@ export const Dashboard = ({ session }: DashboardProps) => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -102,7 +103,6 @@ export const Dashboard = ({ session }: DashboardProps) => {
         </div>
       </header>
 
-      {/* Demo Mode Banner */}
       {isDemoMode && (
         <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-3">
           <div className="max-w-7xl mx-auto">
@@ -116,7 +116,6 @@ export const Dashboard = ({ session }: DashboardProps) => {
         </div>
       )}
 
-      {/* Stripe Connection Warning */}
       {needsStripeConnection && (
         <div className="bg-orange-50 border-b border-orange-200 px-4 py-3">
           <div className="max-w-7xl mx-auto">
@@ -133,7 +132,6 @@ export const Dashboard = ({ session }: DashboardProps) => {
         </div>
       )}
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto p-4">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-5 max-w-2xl">

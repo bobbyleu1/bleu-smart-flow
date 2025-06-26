@@ -9,14 +9,22 @@ import { CreateJobDialog } from "./CreateJobDialog";
 
 interface Job {
   id: string;
-  job_name: string;
-  client_name: string;
+  title: string;
+  job_name: string | null;
+  client_name: string | null;
+  client_id: string;
   price: number;
-  company_id: string;
-  status: 'pending' | 'paid' | 'completed';
+  company_id: string | null;
+  status: 'pending' | 'paid' | 'completed' | 'test' | null;
   payment_url: string | null;
   paid_at: string | null;
   created_at: string;
+  description: string | null;
+  scheduled_date: string;
+  is_recurring: boolean | null;
+  frequency: string | null;
+  stripe_checkout_url: string | null;
+  updated_at: string;
 }
 
 interface UserProfile {
@@ -52,10 +60,9 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
         throw new Error('No authenticated user found');
       }
 
-      // Only select columns that exist in the profiles table
       const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('id, email, company_id, role, created_at')
+        .select('id, email, company_id, role, created_at, is_demo, stripe_connected')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -65,7 +72,6 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
       }
 
       if (!profileData) {
-        // Profile doesn't exist, create it manually
         console.log('Profile not found, creating new profile...');
         
         const newCompanyId = crypto.randomUUID();
@@ -100,11 +106,10 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
         return createdProfile;
       }
 
-      // Set default values for missing columns
       const profileWithDefaults = {
         company_id: profileData.company_id,
-        is_demo: user.email === "demo@smartinvoice.com",
-        stripe_connected: false
+        is_demo: profileData.is_demo || user.email === "demo@smartinvoice.com",
+        stripe_connected: profileData.stripe_connected || false
       };
 
       setUserProfile(profileWithDefaults);
@@ -201,7 +206,6 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
         description: "Payment link generated successfully!",
       });
 
-      // Refresh jobs to get the updated payment_url
       await fetchJobs();
     } catch (error: any) {
       console.error('Failed to generate payment link:', error);
@@ -253,7 +257,7 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
     }
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string | null) => {
     switch (status) {
       case 'paid':
         return <CheckCircle className="w-4 h-4 text-green-600" />;
@@ -266,7 +270,7 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | null) => {
     switch (status) {
       case 'paid':
         return 'bg-green-100 text-green-800 border-green-200';
@@ -285,7 +289,6 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
     return <div className="flex justify-center p-8">Loading jobs...</div>;
   }
 
-  // Show company ID required message if user doesn't have one
   if (!userProfile?.company_id) {
     return (
       <div className="space-y-6">
@@ -325,7 +328,6 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
         </Button>
       </div>
 
-      {/* Filter Tabs - Mobile Friendly */}
       <div className="flex flex-wrap gap-2">
         {(['all', 'pending', 'paid', 'completed'] as const).map((status) => (
           <Button
@@ -340,14 +342,13 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
         ))}
       </div>
 
-      {/* Jobs Grid - Responsive */}
       <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {filteredJobs.map((job) => (
           <Card key={job.id} className="hover:shadow-md transition-shadow">
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <CardTitle className="text-lg truncate">{job.job_name}</CardTitle>
+                  <CardTitle className="text-lg truncate">{job.job_name || job.title}</CardTitle>
                   <CardDescription className="mt-1 truncate">
                     Client: {job.client_name}
                   </CardDescription>
@@ -383,20 +384,19 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
                 </div>
               )}
               
-              {/* Payment Actions */}
               {job.status === 'paid' ? (
                 <div className="text-sm text-green-600 font-medium">
                   Payment completed
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {job.payment_url ? (
+                  {job.payment_url || job.stripe_checkout_url ? (
                     <div className="space-y-2">
                       <div className="flex gap-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => window.open(job.payment_url!, '_blank')}
+                          onClick={() => window.open(job.payment_url || job.stripe_checkout_url!, '_blank')}
                           className="flex-1 min-w-0"
                         >
                           <ExternalLink className="w-4 h-4 mr-1 flex-shrink-0" />
@@ -405,14 +405,14 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => copyPaymentLink(job.payment_url!)}
+                          onClick={() => copyPaymentLink(job.payment_url || job.stripe_checkout_url!)}
                           className="flex-shrink-0"
                         >
                           <Link className="w-4 h-4" />
                         </Button>
                       </div>
                       <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded break-all">
-                        {job.payment_url}
+                        {job.payment_url || job.stripe_checkout_url}
                       </div>
                     </div>
                   ) : (

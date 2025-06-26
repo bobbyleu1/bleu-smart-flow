@@ -53,11 +53,16 @@ export type Database = {
       jobs: {
         Row: {
           client_id: string
+          client_name: string | null
+          company_id: string | null
           created_at: string
           description: string | null
           frequency: string | null
           id: string
           is_recurring: boolean | null
+          job_name: string | null
+          paid_at: string | null
+          payment_url: string | null
           price: number
           scheduled_date: string
           status: string | null
@@ -67,11 +72,16 @@ export type Database = {
         }
         Insert: {
           client_id: string
+          client_name?: string | null
+          company_id?: string | null
           created_at?: string
           description?: string | null
           frequency?: string | null
           id?: string
           is_recurring?: boolean | null
+          job_name?: string | null
+          paid_at?: string | null
+          payment_url?: string | null
           price: number
           scheduled_date: string
           status?: string | null
@@ -81,11 +91,16 @@ export type Database = {
         }
         Update: {
           client_id?: string
+          client_name?: string | null
+          company_id?: string | null
           created_at?: string
           description?: string | null
           frequency?: string | null
           id?: string
           is_recurring?: boolean | null
+          job_name?: string | null
+          paid_at?: string | null
+          payment_url?: string | null
           price?: number
           scheduled_date?: string
           status?: string | null
@@ -103,13 +118,63 @@ export type Database = {
           },
         ]
       }
+      payments: {
+        Row: {
+          amount: number
+          card_saved: boolean | null
+          created_at: string
+          id: string
+          job_id: string | null
+          paid_at: string | null
+          payment_method: string | null
+          payment_status: string
+          stripe_payment_intent_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          card_saved?: boolean | null
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          paid_at?: string | null
+          payment_method?: string | null
+          payment_status?: string
+          stripe_payment_intent_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          card_saved?: boolean | null
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          paid_at?: string | null
+          payment_method?: string | null
+          payment_status?: string
+          stripe_payment_intent_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           company_id: string | null
           created_at: string | null
           email: string | null
           id: string
+          is_demo: boolean | null
           role: string | null
+          stripe_account_id: string | null
+          stripe_connected: boolean | null
           updated_at: string | null
         }
         Insert: {
@@ -117,7 +182,10 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           id: string
+          is_demo?: boolean | null
           role?: string | null
+          stripe_account_id?: string | null
+          stripe_connected?: boolean | null
           updated_at?: string | null
         }
         Update: {
@@ -125,7 +193,10 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           id?: string
+          is_demo?: boolean | null
           role?: string | null
+          stripe_account_id?: string | null
+          stripe_connected?: boolean | null
           updated_at?: string | null
         }
         Relationships: []

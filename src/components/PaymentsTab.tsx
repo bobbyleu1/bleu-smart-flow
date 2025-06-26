@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,7 @@ interface Payment {
   card_saved: boolean;
   jobs: {
     title: string;
+    job_name: string | null;
     clients: {
       name: string;
     };
@@ -83,18 +85,18 @@ export const PaymentsTab = () => {
           *,
           jobs!inner (
             title,
+            job_name,
             clients!inner (
               name
             )
           )
         `)
-        .eq('jobs.clients.company_id', profile.company_id)
+        .eq('jobs.company_id', profile.company_id)
         .order('paid_at', { ascending: false, nullsFirst: false });
 
       if (error) throw error;
       setPayments(data || []);
 
-      // Calculate stats
       const totalRevenue = data?.reduce((sum, payment) => 
         payment.payment_status === 'paid' ? sum + payment.amount : sum, 0) || 0;
       
@@ -166,7 +168,6 @@ export const PaymentsTab = () => {
     return <div className="flex justify-center p-8">Loading payments...</div>;
   }
 
-  // Show company ID required message if user doesn't have one
   if (!userProfile?.company_id) {
     return (
       <div className="space-y-6">
@@ -197,7 +198,6 @@ export const PaymentsTab = () => {
         <p className="text-gray-600">Track your payment history and revenue</p>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -236,7 +236,6 @@ export const PaymentsTab = () => {
         </Card>
       </div>
 
-      {/* Payments List */}
       <div className="space-y-4">
         {payments.map((payment) => (
           <Card key={payment.id} className="hover:shadow-sm transition-shadow">
@@ -245,7 +244,7 @@ export const PaymentsTab = () => {
                 <div className="flex-1">
                   <div className="flex items-center gap-3">
                     <div>
-                      <h4 className="font-medium">{payment.jobs.title}</h4>
+                      <h4 className="font-medium">{payment.jobs.job_name || payment.jobs.title}</h4>
                       <p className="text-sm text-gray-600">
                         {payment.jobs.clients.name}
                       </p>
