@@ -63,6 +63,7 @@ export type Database = {
           job_name: string | null
           paid_at: string | null
           payment_url: string | null
+          phone_number: string | null
           price: number
           scheduled_date: string
           status: string | null
@@ -82,6 +83,7 @@ export type Database = {
           job_name?: string | null
           paid_at?: string | null
           payment_url?: string | null
+          phone_number?: string | null
           price: number
           scheduled_date: string
           status?: string | null
@@ -101,6 +103,7 @@ export type Database = {
           job_name?: string | null
           paid_at?: string | null
           payment_url?: string | null
+          phone_number?: string | null
           price?: number
           scheduled_date?: string
           status?: string | null

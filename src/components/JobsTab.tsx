@@ -2,10 +2,12 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ExternalLink, CheckCircle, Clock, Link, DollarSign, Building, Copy } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, ExternalLink, CheckCircle, Clock, Link, DollarSign, Building, Copy, Phone } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateJobDialog } from "./CreateJobDialog";
+import { sendSMSNotification, formatPaymentLinkSMS } from "@/utils/smsService";
 
 interface Job {
   id: string;
@@ -24,6 +26,7 @@ interface Job {
   is_recurring: boolean | null;
   frequency: string | null;
   stripe_checkout_url: string | null;
+  phone_number: string | null;
   updated_at: string;
 }
 
@@ -42,7 +45,7 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
   const [jobs, setJobs] = useState<Job[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(propUserProfile || null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'completed'>('all');
+  const [activeTab, setActiveTab] = useState<'pending' | 'paid'>('pending');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [generatingLinks, setGeneratingLinks] = useState<Set<string>>(new Set());
   const { toast } = useToast();
@@ -208,10 +211,43 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
 
       console.log('Payment link generated successfully:', data);
 
-      toast({
-        title: "Success",
-        description: "Payment link generated successfully!",
-      });
+      // Find the job to get phone number and details
+      const job = jobs.find(j => j.id === jobId);
+      
+      if (job && job.phone_number && data.url) {
+        console.log('Job has phone number, sending SMS notification');
+        
+        const smsMessage = formatPaymentLinkSMS(
+          data.url,
+          job.job_name || job.title,
+          job.client_name || 'Valued Client',
+          job.price
+        );
+
+        const smsResult = await sendSMSNotification({
+          phoneNumber: job.phone_number,
+          message: smsMessage,
+          jobId: jobId
+        });
+
+        if (smsResult.success) {
+          toast({
+            title: "Success",
+            description: "Payment link generated and SMS sent successfully!",
+          });
+        } else {
+          toast({
+            title: "Partial Success",
+            description: "Payment link generated but SMS failed to send.",
+            variant: "destructive",
+          });
+        }
+      } else {
+        toast({
+          title: "Success",
+          description: "Payment link generated successfully!",
+        });
+      }
 
       await fetchJobs();
     } catch (error: any) {
@@ -290,7 +326,104 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
     }
   };
 
-  const filteredJobs = jobs.filter(job => filter === 'all' || job.status === filter);
+  const pendingJobs = jobs.filter(job => job.status === 'pending' || job.status === 'test');
+  const paidJobs = jobs.filter(job => job.status === 'paid' || job.status === 'completed');
+
+  const JobCard = ({ job }: { job: Job }) => (
+    <Card key={job.id} className="hover:shadow-md transition-shadow">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-lg truncate">{job.job_name || job.title}</CardTitle>
+            <CardDescription className="mt-1 truncate">
+              Client: {job.client_name}
+            </CardDescription>
+            <div className="flex items-center gap-2 mt-2">
+              <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 font-mono">
+                {job.id.slice(0, 8)}...
+              </code>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => copyJobId(job.id)}
+                className="h-6 w-6 p-0"
+              >
+                <Copy className="w-3 h-3" />
+              </Button>
+              {job.phone_number && (
+                <div className="flex items-center gap-1 text-xs text-gray-500">
+                  <Phone className="w-3 h-3" />
+                  <span>{job.phone_number}</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {getStatusIcon(job.status)}
+            <Badge className={`${getStatusColor(job.status)} text-xs`}>
+              {job.status === 'paid' ? '✅ Paid' : job.status}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="text-2xl font-bold text-green-600">
+          ${job.price.toFixed(2)}
+        </div>
+        {job.paid_at && (
+          <div className="text-sm text-gray-500">
+            Paid: {new Date(job.paid_at).toLocaleDateString()}
+          </div>
+        )}
+        
+        {job.status === 'paid' ? (
+          <div className="text-sm text-green-600 font-medium">
+            Payment completed
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {job.payment_url || job.stripe_checkout_url ? (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(job.payment_url || job.stripe_checkout_url!, '_blank')}
+                    className="flex-1 min-w-0"
+                  >
+                    <ExternalLink className="w-4 h-4 mr-1 flex-shrink-0" />
+                    <span className="truncate">Open Link</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyPaymentLink(job.payment_url || job.stripe_checkout_url!)}
+                    className="flex-shrink-0"
+                  >
+                    <Link className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded break-all">
+                  {job.payment_url || job.stripe_checkout_url}
+                </div>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => generatePaymentLink(job.id)}
+                disabled={generatingLinks.has(job.id) || isDemoMode}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+              >
+                <DollarSign className="w-4 h-4 mr-1" />
+                {generatingLinks.has(job.id) ? "Generating..." : 
+                 isDemoMode ? "Demo Mode" : "Generate Payment Link"}
+              </Button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 
   if (loading) {
     return <div className="flex justify-center p-8">Loading jobs...</div>;
@@ -335,126 +468,60 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {(['all', 'pending', 'paid', 'completed'] as const).map((status) => (
-          <Button
-            key={status}
-            variant={filter === status ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFilter(status)}
-            className={`${filter === status ? "bg-blue-600 hover:bg-blue-700" : ""} min-w-0 flex-shrink-0`}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </Button>
-        ))}
-      </div>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'pending' | 'paid')} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="pending" className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            Pending Jobs ({pendingJobs.length})
+          </TabsTrigger>
+          <TabsTrigger value="paid" className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4" />
+            Paid Jobs ({paidJobs.length})
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        {filteredJobs.map((job) => (
-          <Card key={job.id} className="hover:shadow-md transition-shadow">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <CardTitle className="text-lg truncate">{job.job_name || job.title}</CardTitle>
-                  <CardDescription className="mt-1 truncate">
-                    Client: {job.client_name}
-                  </CardDescription>
-                  <div className="flex items-center gap-2 mt-2">
-                    <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 font-mono">
-                      {job.id.slice(0, 8)}...
-                    </code>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyJobId(job.id)}
-                      className="h-6 w-6 p-0"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {getStatusIcon(job.status)}
-                  <Badge className={`${getStatusColor(job.status)} text-xs`}>
-                    {job.status === 'paid' ? '✅ Paid' : job.status}
-                  </Badge>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="text-2xl font-bold text-green-600">
-                ${job.price.toFixed(2)}
-              </div>
-              {job.paid_at && (
-                <div className="text-sm text-gray-500">
-                  Paid: {new Date(job.paid_at).toLocaleDateString()}
-                </div>
-              )}
-              
-              {job.status === 'paid' ? (
-                <div className="text-sm text-green-600 font-medium">
-                  Payment completed
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {job.payment_url || job.stripe_checkout_url ? (
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => window.open(job.payment_url || job.stripe_checkout_url!, '_blank')}
-                          className="flex-1 min-w-0"
-                        >
-                          <ExternalLink className="w-4 h-4 mr-1 flex-shrink-0" />
-                          <span className="truncate">Open Link</span>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => copyPaymentLink(job.payment_url || job.stripe_checkout_url!)}
-                          className="flex-shrink-0"
-                        >
-                          <Link className="w-4 h-4" />
-                        </Button>
-                      </div>
-                      <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded break-all">
-                        {job.payment_url || job.stripe_checkout_url}
-                      </div>
-                    </div>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => generatePaymentLink(job.id)}
-                      disabled={generatingLinks.has(job.id) || isDemoMode}
-                      className="w-full bg-blue-600 hover:bg-blue-700"
-                    >
-                      <DollarSign className="w-4 h-4 mr-1" />
-                      {generatingLinks.has(job.id) ? "Generating..." : 
-                       isDemoMode ? "Demo Mode" : "Generate Payment Link"}
-                    </Button>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+        <TabsContent value="pending" className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {pendingJobs.map((job) => (
+              <JobCard key={job.id} job={job} />
+            ))}
+          </div>
 
-      {filteredJobs.length === 0 && userProfile?.company_id && (
-        <Card className="p-12 text-center">
-          <CardContent>
-            <p className="text-gray-500 mb-4">No jobs found</p>
-            <Button 
-              onClick={() => setShowCreateDialog(true)}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Your First Job
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+          {pendingJobs.length === 0 && (
+            <Card className="p-12 text-center">
+              <CardContent>
+                <p className="text-gray-500 mb-4">No pending jobs found</p>
+                <Button 
+                  onClick={() => setShowCreateDialog(true)}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Your First Job
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="paid" className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {paidJobs.map((job) => (
+              <JobCard key={job.id} job={job} />
+            ))}
+          </div>
+
+          {paidJobs.length === 0 && (
+            <Card className="p-12 text-center">
+              <CardContent>
+                <p className="text-gray-500">No paid jobs yet</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  Completed payments will appear here
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
 
       <CreateJobDialog
         open={showCreateDialog}

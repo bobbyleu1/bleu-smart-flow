@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +44,7 @@ export const CreateJobDialog = ({
     title: "",
     client_id: "",
     price: "",
+    phone_number: "",
     description: "",
     scheduled_date: new Date().toISOString().split('T')[0],
     is_recurring: false,
@@ -97,6 +97,7 @@ export const CreateJobDialog = ({
         title: "",
         client_id: "",
         price: "",
+        phone_number: "",
         description: "",
         scheduled_date: new Date().toISOString().split('T')[0],
         is_recurring: false,
@@ -164,6 +165,7 @@ export const CreateJobDialog = ({
       client_id: formData.client_id,
       client_name: selectedClient.name,
       price: parseFloat(formData.price),
+      phone_number: formData.phone_number.trim() || null,
       company_id: userProfile.company_id,
       description: formData.description.trim() || null,
       scheduled_date: formData.scheduled_date,
@@ -178,6 +180,7 @@ export const CreateJobDialog = ({
         job_name: formData.title.trim(),
         client_name: selectedClient.name,
         price: parseFloat(formData.price),
+        phone_number: formData.phone_number.trim() || null,
         company_id: userProfile.company_id,
         status: isDemoMode ? 'test' : 'pending' as const,
         description: formData.description.trim() || null,
@@ -218,6 +221,7 @@ export const CreateJobDialog = ({
         title: "",
         client_id: "",
         price: "",
+        phone_number: "",
         description: "",
         scheduled_date: new Date().toISOString().split('T')[0],
         is_recurring: false,
@@ -321,6 +325,21 @@ export const CreateJobDialog = ({
               required
               className="mt-1"
             />
+          </div>
+
+          <div>
+            <Label htmlFor="phone_number">Phone Number</Label>
+            <Input
+              id="phone_number"
+              type="tel"
+              value={formData.phone_number}
+              onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+              placeholder="e.g., +1 (555) 123-4567"
+              className="mt-1"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              SMS notifications will be sent to this number when payment links are generated
+            </p>
           </div>
 
           <div>
