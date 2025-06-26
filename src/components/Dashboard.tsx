@@ -36,24 +36,116 @@ export const Dashboard = ({ session }: DashboardProps) => {
     checkStripeStatusOnLoad();
   }, [session]);
 
+  const ensureProfileHasCompanyId = async (userId: string, userEmail: string) => {
+    console.log('Ensuring profile has company_id for user:', userId);
+    
+    try {
+      // Check if profile exists and has company_id
+      const { data: profile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('id, company_id, email')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error('Error fetching profile:', fetchError);
+        throw fetchError;
+      }
+
+      if (!profile) {
+        // Profile doesn't exist, create one
+        const newCompanyId = crypto.randomUUID();
+        console.log('Creating missing profile with company_id:', newCompanyId);
+        
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: userId,
+            email: userEmail,
+            company_id: newCompanyId,
+            role: 'invoice_owner'
+          });
+
+        if (insertError) {
+          console.error('Error creating profile:', insertError);
+          throw insertError;
+        }
+
+        console.log('Profile created successfully');
+        return newCompanyId;
+      } else if (!profile.company_id) {
+        // Profile exists but no company_id
+        const newCompanyId = crypto.randomUUID();
+        console.log('Updating profile with company_id:', newCompanyId);
+        
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ 
+            company_id: newCompanyId,
+            email: userEmail // Ensure email is updated
+          })
+          .eq('id', userId);
+
+        if (updateError) {
+          console.error('Error updating profile:', updateError);
+          throw updateError;
+        }
+
+        console.log('Profile updated with company_id successfully');
+        return newCompanyId;
+      } else {
+        console.log('Profile already has company_id:', profile.company_id);
+        return profile.company_id;
+      }
+    } catch (error) {
+      console.error('Failed to ensure profile has company_id:', error);
+      throw error;
+    }
+  };
+
   const fetchUserProfile = async () => {
     try {
+      console.log('Fetching user profile...');
+      
+      // First ensure the user has a proper profile with company_id
+      await ensureProfileHasCompanyId(session.user.id, session.user.email || '');
+      
+      // Now fetch the profile data
       const { data, error } = await supabase
         .from('profiles')
         .select('company_id, is_demo, stripe_connected')
         .eq('id', session.user.id)
-        .maybeSingle();
+        .single();
 
       if (error) {
         console.error('Error fetching profile:', error);
-        setUserProfile({ company_id: null, is_demo: false, stripe_connected: false });
+        
+        // If we still can't fetch, create a basic profile object
+        setUserProfile({ 
+          company_id: crypto.randomUUID(), 
+          is_demo: false, 
+          stripe_connected: false 
+        });
         return;
       }
 
+      console.log('Profile data fetched:', data);
       setUserProfile(data || { company_id: null, is_demo: false, stripe_connected: false });
     } catch (error) {
       console.error('Failed to fetch profile:', error);
-      setUserProfile({ company_id: null, is_demo: false, stripe_connected: false });
+      
+      // Fallback: create a basic profile to prevent app crashes
+      setUserProfile({ 
+        company_id: crypto.randomUUID(), 
+        is_demo: false, 
+        stripe_connected: false 
+      });
+      
+      toast({
+        title: "Profile Setup",
+        description: "There was an issue with your profile setup. A new company has been created for you.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }

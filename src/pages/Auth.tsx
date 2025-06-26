@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -35,7 +34,7 @@ export const Auth = () => {
       // First try to get existing profile
       const { data: existingProfile, error: fetchError } = await supabase
         .from('profiles')
-        .select('id, company_id')
+        .select('id, company_id, email')
         .eq('id', userId)
         .maybeSingle();
 
@@ -45,15 +44,19 @@ export const Auth = () => {
       }
 
       if (existingProfile) {
-        if (existingProfile.company_id) {
-          console.log('Profile exists with company_id:', existingProfile.company_id);
-          return existingProfile.company_id;
-        } else {
-          // Profile exists but no company_id, generate one
+        console.log('Existing profile found:', existingProfile);
+        
+        // If profile exists but no company_id, update it
+        if (!existingProfile.company_id) {
           const newCompanyId = crypto.randomUUID();
+          console.log('Updating existing profile with company_id:', newCompanyId);
+          
           const { error: updateError } = await supabase
             .from('profiles')
-            .update({ company_id: newCompanyId })
+            .update({ 
+              company_id: newCompanyId,
+              email: userEmail // Ensure email is also updated
+            })
             .eq('id', userId);
 
           if (updateError) {
@@ -61,12 +64,17 @@ export const Auth = () => {
             throw updateError;
           }
 
-          console.log('Updated profile with new company_id:', newCompanyId);
+          console.log('Profile updated with company_id successfully');
           return newCompanyId;
+        } else {
+          console.log('Profile already has company_id:', existingProfile.company_id);
+          return existingProfile.company_id;
         }
       } else {
         // Profile doesn't exist, create one
         const newCompanyId = crypto.randomUUID();
+        console.log('Creating new profile with company_id:', newCompanyId);
+        
         const { error: insertError } = await supabase
           .from('profiles')
           .insert({
@@ -81,7 +89,7 @@ export const Auth = () => {
           throw insertError;
         }
 
-        console.log('Created new profile with company_id:', newCompanyId);
+        console.log('New profile created successfully with company_id:', newCompanyId);
         return newCompanyId;
       }
     } catch (error) {
@@ -95,7 +103,7 @@ export const Auth = () => {
     
     console.log('Updating profile for invited user:', userId, 'to company:', inviteCompanyId);
     
-    // Wait a moment for the profile to be created
+    // Wait a moment for the profile to be created/updated
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     // Update the user's profile to join the invite company
@@ -243,7 +251,12 @@ export const Auth = () => {
             await ensureUserProfile(data.user.id, data.user.email || email);
           } catch (profileError) {
             console.error('Failed to ensure profile on login:', profileError);
-            // Don't block login for this
+            // Don't block login for this, but show a warning
+            toast({
+              title: "Profile Update",
+              description: "There was an issue updating your profile. Some features may not work properly.",
+              variant: "destructive",
+            });
           }
         }
       }
