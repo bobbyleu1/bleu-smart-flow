@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   email TEXT,
   company_id UUID,
   role TEXT DEFAULT 'invoice_owner',
+  is_demo BOOLEAN DEFAULT FALSE,
+  stripe_connected BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

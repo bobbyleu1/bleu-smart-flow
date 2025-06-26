@@ -44,7 +44,7 @@ export const Dashboard = ({ session }: DashboardProps) => {
         return;
       }
 
-      setUserProfile(data || { company_id: null });
+      setUserProfile(data || { company_id: null, is_demo: false, stripe_connected: false });
     } catch (error) {
       console.error('Failed to fetch profile:', error);
     } finally {
