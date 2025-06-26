@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateJobDialog } from "./CreateJobDialog";
 import { sendSMSNotification, formatPaymentLinkSMS } from "@/utils/smsService";
+import { ReceiptViewer } from "./ReceiptViewer";
 
 interface Job {
   id: string;
@@ -28,6 +29,7 @@ interface Job {
   stripe_checkout_url: string | null;
   phone_number: string | null;
   updated_at: string;
+  receipt_id: string | null;
 }
 
 interface UserProfile {
@@ -403,14 +405,28 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
           ${job.price.toFixed(2)}
         </div>
         {job.paid_at && (
-          <div className="text-sm text-gray-500">
-            Paid: {new Date(job.paid_at).toLocaleDateString()}
+          <div className="text-sm text-green-600 font-medium">
+            ✅ Paid on {new Date(job.paid_at).toLocaleDateString()} at {new Date(job.paid_at).toLocaleTimeString()}
           </div>
         )}
         
         {job.status === 'paid' ? (
-          <div className="text-sm text-green-600 font-medium">
-            Payment completed
+          <div className="space-y-2">
+            <div className="text-sm text-green-600 font-medium">
+              Payment completed
+            </div>
+            {job.receipt_id && (
+              <ReceiptViewer 
+                jobId={job.id} 
+                receiptId={job.receipt_id}
+                trigger={
+                  <Button variant="outline" size="sm" className="w-full">
+                    <FileText className="w-4 h-4 mr-2" />
+                    View Receipt
+                  </Button>
+                }
+              />
+            )}
           </div>
         ) : (
           <div className="space-y-2">

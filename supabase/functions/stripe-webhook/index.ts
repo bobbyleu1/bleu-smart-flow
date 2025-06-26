@@ -64,13 +64,15 @@ serve(async (req) => {
       );
 
       // Update job status to paid and set paid_at timestamp
-      const { error: jobUpdateError } = await supabaseAdmin
+      const { data: updatedJob, error: jobUpdateError } = await supabaseAdmin
         .from('jobs')
         .update({ 
           status: 'paid',
           paid_at: new Date().toISOString()
         })
-        .eq('id', jobId);
+        .eq('id', jobId)
+        .select('*')
+        .single();
 
       if (jobUpdateError) {
         console.error("Error updating job status:", jobUpdateError);
@@ -78,6 +80,36 @@ serve(async (req) => {
       }
 
       console.log("Updated job status to paid for job:", jobId);
+
+      // Trigger receipt generation
+      try {
+        console.log("Triggering receipt generation for job:", jobId);
+        const receiptResponse = await fetch(
+          `${Deno.env.get("SUPABASE_URL")}/functions/v1/generate-receipt`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            },
+            body: JSON.stringify({
+              jobId: jobId,
+              sessionId: session.id,
+              amountPaid: session.amount_total,
+              paymentDate: new Date().toISOString()
+            })
+          }
+        );
+
+        if (!receiptResponse.ok) {
+          console.error("Failed to generate receipt:", await receiptResponse.text());
+        } else {
+          console.log("Receipt generation triggered successfully");
+        }
+      } catch (receiptError) {
+        console.error("Error triggering receipt generation:", receiptError);
+        // Don't fail the webhook if receipt generation fails
+      }
     }
 
     return new Response(JSON.stringify({ received: true }), {
