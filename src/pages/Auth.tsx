@@ -32,19 +32,58 @@ export const Auth = () => {
     console.log('Ensuring user profile exists for:', userId);
     
     try {
-      // Call the ensure_user_profile function with proper parameter names
-      const { data, error } = await (supabase as any).rpc('ensure_user_profile', {
-        user_id: userId,
-        user_email: userEmail
-      });
+      // First try to get existing profile
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('id, company_id')
+        .eq('id', userId)
+        .maybeSingle();
 
-      if (error) {
-        console.error('Error ensuring user profile:', error);
-        throw error;
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error('Error fetching existing profile:', fetchError);
+        throw fetchError;
       }
 
-      console.log('User profile ensured, company_id:', data);
-      return data; // This is the company_id
+      if (existingProfile) {
+        if (existingProfile.company_id) {
+          console.log('Profile exists with company_id:', existingProfile.company_id);
+          return existingProfile.company_id;
+        } else {
+          // Profile exists but no company_id, generate one
+          const newCompanyId = crypto.randomUUID();
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ company_id: newCompanyId })
+            .eq('id', userId);
+
+          if (updateError) {
+            console.error('Error updating profile with company_id:', updateError);
+            throw updateError;
+          }
+
+          console.log('Updated profile with new company_id:', newCompanyId);
+          return newCompanyId;
+        }
+      } else {
+        // Profile doesn't exist, create one
+        const newCompanyId = crypto.randomUUID();
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: userId,
+            email: userEmail,
+            company_id: newCompanyId,
+            role: 'invoice_owner'
+          });
+
+        if (insertError) {
+          console.error('Error creating new profile:', insertError);
+          throw insertError;
+        }
+
+        console.log('Created new profile with company_id:', newCompanyId);
+        return newCompanyId;
+      }
     } catch (error) {
       console.error('Failed to ensure user profile:', error);
       throw error;
@@ -56,7 +95,7 @@ export const Auth = () => {
     
     console.log('Updating profile for invited user:', userId, 'to company:', inviteCompanyId);
     
-    // Wait a moment for the trigger to create the profile
+    // Wait a moment for the profile to be created
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     // Update the user's profile to join the invite company
@@ -155,7 +194,7 @@ export const Auth = () => {
         // Ensure user profile is created with company_id
         if (data.user) {
           try {
-            // Wait for trigger to complete
+            // Wait for auth to complete
             await new Promise(resolve => setTimeout(resolve, 1000));
             
             // Ensure profile exists and has company_id
