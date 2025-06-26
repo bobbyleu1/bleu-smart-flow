@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,10 +52,10 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
         throw new Error('No authenticated user found');
       }
 
-      // Try to get existing profile
+      // Only select columns that exist in the profiles table
       const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('company_id, is_demo, stripe_connected')
+        .select('id, email, company_id, role, created_at')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -86,7 +85,11 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
           throw insertError;
         }
 
-        const createdProfile = { company_id: newCompanyId };
+        const createdProfile = { 
+          company_id: newCompanyId,
+          is_demo: user.email === "demo@smartinvoice.com",
+          stripe_connected: false
+        };
         setUserProfile(createdProfile);
         
         toast({
@@ -97,8 +100,15 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
         return createdProfile;
       }
 
-      setUserProfile(profileData);
-      return profileData;
+      // Set default values for missing columns
+      const profileWithDefaults = {
+        company_id: profileData.company_id,
+        is_demo: user.email === "demo@smartinvoice.com",
+        stripe_connected: false
+      };
+
+      setUserProfile(profileWithDefaults);
+      return profileWithDefaults;
     } catch (error: any) {
       console.error('Failed to fetch user profile:', error);
       toast({
@@ -120,6 +130,8 @@ export const JobsTab = ({ userProfile: propUserProfile, isDemoMode = false }: Jo
         setJobs([]);
         return;
       }
+
+      console.log('Fetching jobs for company_id:', profile.company_id);
 
       const { data, error } = await supabase
         .from('jobs')

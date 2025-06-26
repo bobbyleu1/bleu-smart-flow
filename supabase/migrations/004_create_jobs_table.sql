@@ -2,16 +2,21 @@
 -- Drop existing table if it exists to recreate with correct structure
 DROP TABLE IF EXISTS public.jobs CASCADE;
 
--- Create jobs table with updated schema
+-- Create jobs table with updated schema to match the application code
 CREATE TABLE IF NOT EXISTS public.jobs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   job_name TEXT NOT NULL,
   client_name TEXT NOT NULL,
+  client_id UUID,
   price DECIMAL(10,2) NOT NULL,
   company_id UUID NOT NULL,
-  status TEXT CHECK (status IN ('pending', 'paid', 'completed')) DEFAULT 'pending',
+  status TEXT CHECK (status IN ('pending', 'paid', 'completed', 'test')) DEFAULT 'pending',
   payment_url TEXT,
   paid_at TIMESTAMP WITH TIME ZONE,
+  description TEXT,
+  scheduled_date DATE,
+  is_recurring BOOLEAN DEFAULT FALSE,
+  frequency TEXT CHECK (frequency IN ('weekly', 'bi-weekly', 'monthly')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -19,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.jobs (
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS jobs_company_id_idx ON public.jobs(company_id);
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON public.jobs(status);
+CREATE INDEX IF NOT EXISTS jobs_client_id_idx ON public.jobs(client_id);
 
 -- Enable RLS (Row Level Security)
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;

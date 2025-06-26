@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,9 +39,10 @@ export const ProfileTab = () => {
         throw new Error('No authenticated user found');
       }
 
+      // Only select columns that exist in the profiles table
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, email, company_id, role, created_at')
         .eq('id', user.id)
         .single();
 
@@ -51,7 +51,14 @@ export const ProfileTab = () => {
         throw error;
       }
 
-      setProfile(data);
+      // Set default values for missing columns
+      const profileWithDefaults = {
+        ...data,
+        is_demo: user.email === "demo@smartinvoice.com",
+        stripe_connected: false
+      };
+
+      setProfile(profileWithDefaults);
     } catch (error) {
       console.error('Failed to fetch profile:', error);
       toast({

@@ -109,10 +109,40 @@ export const CreateJobDialog = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validate company_id
     if (!userProfile?.company_id) {
+      console.error('No company_id available for job creation');
       toast({
         title: "Error",
-        description: "Company ID is required to create jobs",
+        description: "Company ID is required to create jobs. Please check your profile settings.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate required fields
+    if (!formData.title.trim()) {
+      toast({
+        title: "Error",
+        description: "Job title is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.client_id) {
+      toast({
+        title: "Error",
+        description: "Please select a client",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.price || parseFloat(formData.price) <= 0) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid price",
         variant: "destructive",
       });
       return;
@@ -120,21 +150,48 @@ export const CreateJobDialog = ({
 
     setLoading(true);
 
-    console.log('Attempting to create job with data:', formData);
+    // Get the selected client details
+    const selectedClient = clients.find(client => client.id === formData.client_id);
+    if (!selectedClient) {
+      console.error('Selected client not found:', formData.client_id);
+      toast({
+        title: "Error",
+        description: "Selected client not found",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
+
+    console.log('Creating job with data:', {
+      title: formData.title.trim(),
+      client_id: formData.client_id,
+      client_name: selectedClient.name,
+      price: parseFloat(formData.price),
+      company_id: userProfile.company_id,
+      description: formData.description.trim() || null,
+      scheduled_date: formData.scheduled_date,
+      is_recurring: formData.is_recurring,
+      frequency: formData.is_recurring ? formData.frequency : null,
+      status: isDemoMode ? 'test' : 'pending'
+    });
 
     try {
+      // Prepare job data with all required fields
       const jobData = {
-        title: formData.title.trim(),
-        client_id: formData.client_id,
+        job_name: formData.title.trim(),
+        client_name: selectedClient.name,
         price: parseFloat(formData.price),
+        company_id: userProfile.company_id,
+        status: isDemoMode ? 'test' : 'pending' as const,
         description: formData.description.trim() || null,
         scheduled_date: formData.scheduled_date,
         is_recurring: formData.is_recurring,
         frequency: formData.is_recurring ? formData.frequency : null,
-        status: isDemoMode ? 'test' : 'pending' as const
+        client_id: formData.client_id
       };
 
-      console.log('Inserting job data:', jobData);
+      console.log('Inserting job data into database:', jobData);
 
       const { data, error } = await supabase
         .from('jobs')
@@ -142,7 +199,13 @@ export const CreateJobDialog = ({
         .select();
 
       if (error) {
-        console.error('Job insertion error:', error);
+        console.error('Job insertion error details:', {
+          error,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
         throw error;
       }
 
@@ -155,6 +218,7 @@ export const CreateJobDialog = ({
           : "Job created successfully",
       });
 
+      // Reset form
       setFormData({
         title: "",
         client_id: "",
@@ -168,10 +232,19 @@ export const CreateJobDialog = ({
       onJobCreated();
       onOpenChange(false);
     } catch (error: any) {
-      console.error('Error creating job:', error);
+      console.error('Detailed error creating job:', {
+        error,
+        errorMessage: error.message,
+        errorCode: error.code,
+        errorDetails: error.details,
+        userProfile,
+        formData,
+        selectedClient
+      });
+      
       toast({
         title: "Error",
-        description: error.message || "Failed to create job",
+        description: error.message || "Failed to create job. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -320,7 +393,7 @@ export const CreateJobDialog = ({
             </Button>
             <Button
               type="submit"
-              disabled={loading || clients.length === 0}
+              disabled={loading || clients.length === 0 || !userProfile?.company_id}
               className="flex-1 bg-blue-600 hover:bg-blue-700"
             >
               {loading ? "Creating..." : "Create Job"}
