@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.21.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -11,7 +10,7 @@ const corsHeaders = {
 };
 
 // Platform account ID to avoid self-transfer
-const PLATFORM_STRIPE_ACCOUNT_ID = "acct_1Re95IPqtlol8JdB";
+const PLATFORM_STRIPE_ACCOUNT_ID = "acct_1RWAfbLgPKVoUe8t";
 
 serve(async (req) => {
   console.log("Create checkout function called with method:", req.method);
@@ -129,6 +128,7 @@ serve(async (req) => {
     // Fetch the company's Stripe account ID from profiles table
     let companyStripeAccountId = null;
     let shouldUseStripeConnect = false;
+    let useConnectedAccount = false;
     
     if (job.company_id) {
       console.log("Fetching company Stripe account for company_id:", job.company_id);
@@ -141,24 +141,28 @@ serve(async (req) => {
 
       if (profileError) {
         console.warn("Error fetching company profile or company not Stripe connected:", profileError);
-        console.log("Using platform account for payment processing");
+        console.log("ROUTING DECISION: Using platform account for payment processing");
       } else if (companyProfile?.stripe_account_id) {
         companyStripeAccountId = companyProfile.stripe_account_id;
         console.log("Found company Stripe account:", companyStripeAccountId);
         
         // Check if company account is different from platform account
         if (companyStripeAccountId === PLATFORM_STRIPE_ACCOUNT_ID) {
-          console.log("Company account matches platform account - using platform-only processing");
+          console.log("ROUTING DECISION: Company account matches platform account - using platform-only processing");
           shouldUseStripeConnect = false;
+          useConnectedAccount = false;
         } else {
-          console.log("Company account is different from platform - using Stripe Connect");
+          console.log("ROUTING DECISION: Company account is different from platform - using Stripe Connect");
           shouldUseStripeConnect = true;
+          useConnectedAccount = true;
         }
       } else {
         console.warn("Company does not have Stripe account connected, using platform account");
+        console.log("ROUTING DECISION: Using platform account (no connected account)");
       }
     } else {
       console.log("Job does not have company_id, using platform account");
+      console.log("ROUTING DECISION: Using platform account (no company_id)");
     }
 
     // Safe price handling
@@ -191,13 +195,16 @@ serve(async (req) => {
 
     // Convert to cents and calculate platform fee (5%)
     const jobPriceInCents = Math.round(jobPrice * 100);
-    const platformFeeInCents = Math.round(jobPriceInCents * 0.05);
+    const platformFeeInCents = shouldUseStripeConnect ? Math.round(jobPriceInCents * 0.05) : 0;
     const totalAmountInCents = jobPriceInCents;
 
-    console.log("Original job price:", jobPrice);
-    console.log("Job price in cents:", jobPriceInCents);
-    console.log("Platform fee (5%) in cents:", platformFeeInCents);
-    console.log("Total amount in cents:", totalAmountInCents);
+    console.log("PAYMENT DETAILS:");
+    console.log("- Original job price:", jobPrice);
+    console.log("- Job price in cents:", jobPriceInCents);
+    console.log("- Platform fee (5%) in cents:", platformFeeInCents);
+    console.log("- Total amount in cents:", totalAmountInCents);
+    console.log("- Using Stripe Connect:", shouldUseStripeConnect);
+    console.log("- Target account:", useConnectedAccount ? companyStripeAccountId : "Platform account");
 
     if (totalAmountInCents < 50) {
       console.error("Price too low for Stripe (minimum $0.50):", totalAmountInCents);
@@ -238,57 +245,100 @@ serve(async (req) => {
         original_price: jobPrice.toString(),
         platform_fee_amount: (platformFeeInCents / 100).toString(),
         company_id: job.company_id || '',
+        routing_method: shouldUseStripeConnect ? 'stripe_connect' : 'platform_only',
       },
     };
 
-    // Always add application fee for platform
-    sessionConfig.payment_intent_data = {
-      application_fee_amount: platformFeeInCents,
-    };
-
-    // Add Stripe Connect configuration only if using different connected account
-    if (shouldUseStripeConnect && companyStripeAccountId) {
-      sessionConfig.payment_intent_data.transfer_data = {
-        destination: companyStripeAccountId,
+    // Configure payment intent data based on routing method
+    if (shouldUseStripeConnect && useConnectedAccount && companyStripeAccountId) {
+      // Using Stripe Connect with connected account
+      sessionConfig.payment_intent_data = {
+        application_fee_amount: platformFeeInCents,
+        transfer_data: {
+          destination: companyStripeAccountId,
+        },
       };
-      console.log("Using Stripe Connect with destination:", companyStripeAccountId, "and platform fee:", platformFeeInCents);
+      console.log("SESSION CONFIG: Using Stripe Connect");
+      console.log("- Destination account:", companyStripeAccountId);
+      console.log("- Application fee:", platformFeeInCents, "cents");
     } else {
-      console.log("Using platform account only with application fee:", platformFeeInCents);
+      // Using platform account only - no application fee needed
+      console.log("SESSION CONFIG: Using platform account only (no fees)");
     }
 
-    // Create Stripe checkout session
-    const session = await stripe.checkout.sessions.create(sessionConfig);
+    try {
+      // Create Stripe checkout session with or without connected account
+      const session = useConnectedAccount && companyStripeAccountId 
+        ? await stripe.checkout.sessions.create(sessionConfig, { stripeAccount: companyStripeAccountId })
+        : await stripe.checkout.sessions.create(sessionConfig);
 
-    console.log("Stripe session created:", session.id);
+      console.log("SUCCESS: Stripe session created:", session.id);
+      console.log("- Session URL:", session.url);
 
-    // Update job with payment URL
-    const { error: updateError } = await supabaseAdmin
-      .from('jobs')
-      .update({ 
-        payment_url: session.url,
-        stripe_checkout_url: session.url 
-      })
-      .eq('id', jobId);
+      // Update job with payment URL
+      const { error: updateError } = await supabaseAdmin
+        .from('jobs')
+        .update({ 
+          payment_url: session.url,
+          stripe_checkout_url: session.url 
+        })
+        .eq('id', jobId);
 
-    if (updateError) {
-      console.error("Error updating job with payment link:", updateError);
-      // Don't fail the whole request if this update fails
-      console.log("Continuing despite update error - payment link still generated");
-    } else {
-      console.log("Job updated with payment URL");
-    }
-
-    return new Response(
-      JSON.stringify({ 
-        success: true,
-        url: session.url,
-        sessionId: session.id 
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
+      if (updateError) {
+        console.error("Error updating job with payment link:", updateError);
+        // Don't fail the whole request if this update fails
+        console.log("Continuing despite update error - payment link still generated");
+      } else {
+        console.log("Job updated with payment URL");
       }
-    );
+
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          url: session.url,
+          sessionId: session.id,
+          routing_info: {
+            method: shouldUseStripeConnect ? 'stripe_connect' : 'platform_only',
+            destination_account: useConnectedAccount ? companyStripeAccountId : 'platform',
+            application_fee_cents: platformFeeInCents,
+          }
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    } catch (stripeError) {
+      console.error("STRIPE API ERROR:", stripeError);
+      
+      // Handle specific Stripe Connect errors
+      if (stripeError.message?.includes("cannot be set to your own account")) {
+        console.error("ERROR: Attempted to transfer to own account - falling back to platform processing");
+        
+        // Fallback: Create session without transfer_data
+        const fallbackConfig = { ...sessionConfig };
+        delete fallbackConfig.payment_intent_data;
+        
+        const fallbackSession = await stripe.checkout.sessions.create(fallbackConfig);
+        console.log("FALLBACK SUCCESS: Created platform-only session:", fallbackSession.id);
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true,
+            url: fallbackSession.url,
+            sessionId: fallbackSession.id,
+            warning: "Routed to platform account due to Stripe Connect configuration issue"
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          }
+        );
+      }
+      
+      // Re-throw other Stripe errors
+      throw stripeError;
+    }
   } catch (error) {
     console.error("Error in create-checkout function:", error);
     return new Response(
