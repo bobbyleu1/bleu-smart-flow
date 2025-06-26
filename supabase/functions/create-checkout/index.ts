@@ -141,26 +141,26 @@ serve(async (req) => {
 
       if (profileError) {
         console.warn("Error fetching company profile or company not Stripe connected:", profileError);
-        console.log("Using platform account, skipping transfer and fee");
+        console.log("Falling back to platform account with no fee");
       } else if (companyProfile?.stripe_account_id) {
         companyStripeAccountId = companyProfile.stripe_account_id;
         console.log("Found company Stripe account:", companyStripeAccountId);
         
         // Check if company account is different from platform account
         if (companyStripeAccountId === PLATFORM_STRIPE_ACCOUNT_ID) {
-          console.log("Using platform account, skipping transfer and fee");
+          console.log("Falling back to platform account with no fee");
           useConnectedAccount = false;
         } else {
-          console.log("Using connected account for payment");
+          console.log(`Using connected account: ${companyStripeAccountId}`);
           useConnectedAccount = true;
         }
       } else {
         console.warn("Company does not have Stripe account connected");
-        console.log("Using platform account, skipping transfer and fee");
+        console.log("Falling back to platform account with no fee");
       }
     } else {
       console.log("Job does not have company_id");
-      console.log("Using platform account, skipping transfer and fee");
+      console.log("Falling back to platform account with no fee");
     }
 
     // Safe price handling
@@ -194,6 +194,12 @@ serve(async (req) => {
     // Convert to cents and calculate platform fee (5% only for connected accounts)
     const jobPriceInCents = Math.round(jobPrice * 100);
     const platformFeeInCents = useConnectedAccount ? Math.round(jobPrice * 0.05 * 100) : 0;
+
+    if (useConnectedAccount) {
+      console.log(`Using connected account: ${companyStripeAccountId} and fee: ${platformFeeInCents}`);
+    } else {
+      console.log("Falling back to platform account with no fee");
+    }
 
     console.log("PAYMENT DETAILS:");
     console.log("- Original job price:", jobPrice);
