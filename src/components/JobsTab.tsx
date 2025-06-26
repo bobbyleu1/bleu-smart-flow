@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, ExternalLink, CheckCircle, Clock, Link, DollarSign, Building, Copy, Phone } from "lucide-react";
+import { Plus, ExternalLink, CheckCircle, Clock, Link, DollarSign, Building, Copy, Phone, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CreateJobDialog } from "./CreateJobDialog";

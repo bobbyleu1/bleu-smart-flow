@@ -65,6 +65,7 @@ export type Database = {
           payment_url: string | null
           phone_number: string | null
           price: number
+          receipt_id: string | null
           scheduled_date: string
           status: string | null
           stripe_checkout_url: string | null
@@ -85,6 +86,7 @@ export type Database = {
           payment_url?: string | null
           phone_number?: string | null
           price: number
+          receipt_id?: string | null
           scheduled_date: string
           status?: string | null
           stripe_checkout_url?: string | null
@@ -105,6 +107,7 @@ export type Database = {
           payment_url?: string | null
           phone_number?: string | null
           price?: number
+          receipt_id?: string | null
           scheduled_date?: string
           status?: string | null
           stripe_checkout_url?: string | null
@@ -117,6 +120,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_receipt_id_fkey"
+            columns: ["receipt_id"]
+            isOneToOne: false
+            referencedRelation: "receipts"
             referencedColumns: ["id"]
           },
         ]
@@ -203,6 +213,41 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      receipts: {
+        Row: {
+          amount_paid: number
+          created_at: string
+          id: string
+          job_id: string
+          receipt_html: string
+          session_id: string
+        }
+        Insert: {
+          amount_paid: number
+          created_at?: string
+          id?: string
+          job_id: string
+          receipt_html: string
+          session_id: string
+        }
+        Update: {
+          amount_paid?: number
+          created_at?: string
+          id?: string
+          job_id?: string
+          receipt_html?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipts_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
