@@ -126,19 +126,45 @@ serve(async (req) => {
 
     console.log("Job details fetched:", { id: job.id, job_name: job.job_name, price: job.price, company_id: job.company_id });
 
-    // Safe price handling
-    let jobPrice;
+    // Safe price handling - this is the BASE price the connected account will receive
+    let basePriceInCents;
     try {
-      jobPrice = parseFloat(job.price);
+      const jobPrice = parseFloat(job.price);
       if (isNaN(jobPrice) || jobPrice <= 0) {
         throw new Error("Invalid price value");
       }
+      basePriceInCents = Math.round(jobPrice * 100);
     } catch (priceError) {
       console.error("Invalid job price:", job.price, priceError);
       return new Response(
         JSON.stringify({ 
           success: false,
           error: "Invalid or missing price in job data" 
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
+
+    // Calculate markup (5% of base price) - this goes to the platform
+    const platformMarkup = Math.round(basePriceInCents * 0.05);
+    
+    // Total price customer pays (base + markup)
+    const totalPriceInCents = basePriceInCents + platformMarkup;
+    
+    console.log(`Markup Model Pricing:
+      - Base price (to connected account): ${basePriceInCents} cents ($${basePriceInCents/100})
+      - Platform markup (5%): ${platformMarkup} cents ($${platformMarkup/100})
+      - Total customer pays: ${totalPriceInCents} cents ($${totalPriceInCents/100})`);
+
+    if (totalPriceInCents < 50) {
+      console.error("Total price too low for Stripe (minimum $0.50):", totalPriceInCents);
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          error: "Job price too low for payment processing (minimum $0.50 total including markup)" 
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -182,7 +208,7 @@ serve(async (req) => {
             
             if (connectedAccountChargesEnabled) {
               useStripeConnect = true;
-              console.log('Using Connect account:', connectedStripeAccountId);
+              console.log('Using Connect account for markup model:', connectedStripeAccountId);
             } else {
               console.log('Connected account cannot accept charges, falling back to platform');
             }
@@ -193,30 +219,14 @@ serve(async (req) => {
         } else {
           console.log('Company account matches platform account, using platform processing');
         }
+      } else {
+        console.log('No connected Stripe account found for company');
       }
+    } else {
+      console.log('No company_id found in job, using platform processing');
     }
 
-    // Calculate amounts in cents
-    const totalPriceInCents = Math.round(jobPrice * 100);
-    const platformFeeInCents = useStripeConnect ? Math.round(jobPrice * 100 * 0.05) : 0; // 5% platform fee
-    
-    console.log(`Pricing: Job price $${jobPrice}, Total ${totalPriceInCents} cents, Platform fee: ${platformFeeInCents} cents`);
-
-    if (totalPriceInCents < 50) {
-      console.error("Price too low for Stripe (minimum $0.50):", totalPriceInCents);
-      return new Response(
-        JSON.stringify({ 
-          success: false,
-          error: "Job price too low for payment processing (minimum $0.50)" 
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
-        }
-      );
-    }
-
-    console.log("Creating Stripe checkout session");
+    console.log("Creating Stripe checkout session with markup model");
 
     // Create checkout session configuration
     const sessionConfig = {
@@ -229,7 +239,7 @@ serve(async (req) => {
               name: job.job_name || 'Service',
               description: `Service for ${job.client_name || 'Client'}`,
             },
-            unit_amount: totalPriceInCents,
+            unit_amount: totalPriceInCents, // Customer pays base + markup
           },
           quantity: 1,
         },
@@ -240,19 +250,25 @@ serve(async (req) => {
       metadata: {
         job_id: jobId,
         client_name: job.client_name || 'Unknown Client',
-        original_price: jobPrice.toString(),
-        platform_fee_amount: (platformFeeInCents / 100).toString(),
+        base_price: (basePriceInCents / 100).toString(),
+        platform_markup: (platformMarkup / 100).toString(),
+        total_price: (totalPriceInCents / 100).toString(),
         company_id: job.company_id || '',
-        routing_method: useStripeConnect ? 'stripe_connect_direct' : 'platform_only',
+        routing_method: useStripeConnect ? 'stripe_connect_markup' : 'platform_only',
       },
     };
 
-    // Add application fee for Stripe Connect
-    if (useStripeConnect && platformFeeInCents > 0) {
+    // Add payment intent data for Stripe Connect markup model
+    if (useStripeConnect && platformMarkup > 0) {
       sessionConfig.payment_intent_data = {
-        application_fee_amount: platformFeeInCents,
+        application_fee_amount: platformMarkup, // Platform gets the markup
+        transfer_data: {
+          destination: connectedStripeAccountId, // Connected account gets base price
+        },
       };
-      console.log('Using Stripe Connect Direct Charges with application fee:', platformFeeInCents, 'cents');
+      console.log('Using Stripe Connect Markup Model:');
+      console.log('- Connected account receives:', basePriceInCents, 'cents');
+      console.log('- Platform receives markup:', platformMarkup, 'cents');
     }
 
     try {
@@ -289,15 +305,16 @@ serve(async (req) => {
           url: session.url,
           sessionId: session.id,
           pricing_info: {
-            original_price: jobPrice,
-            total_price: totalPriceInCents / 100,
-            platform_fee: platformFeeInCents / 100,
+            base_price: basePriceInCents / 100,
+            platform_markup: platformMarkup / 100,
+            total_customer_pays: totalPriceInCents / 100,
             connect_used: useStripeConnect
           },
           routing_info: {
-            method: useStripeConnect ? 'stripe_connect_direct' : 'platform_only',
+            method: useStriteConnect ? 'stripe_connect_markup' : 'platform_only',
             destination_account: useStripeConnect ? connectedStripeAccountId : 'platform',
-            application_fee_cents: platformFeeInCents,
+            markup_amount_cents: platformMarkup,
+            base_amount_cents: basePriceInCents,
             charges_enabled: connectedAccountChargesEnabled
           }
         }),
@@ -346,7 +363,7 @@ serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
+      status: 200,
       }
     );
   }
