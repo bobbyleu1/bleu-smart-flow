@@ -32,36 +32,19 @@ export const ReceiptViewer = ({ jobId, receiptId, trigger }: ReceiptViewerProps)
     
     setLoading(true);
     try {
-      // Use a direct query since the receipts table might not be in the generated types yet
       const { data, error } = await supabase
-        .rpc('get_receipt_by_id', { receipt_id: receiptId });
+        .from('receipts')
+        .select('*')
+        .eq('id', receiptId)
+        .single();
 
       if (error) {
-        console.error('Error fetching receipt via RPC:', error);
-        // Fallback: try direct query with proper error handling
-        const response = await fetch(`${supabase.supabaseUrl}/rest/v1/receipts?id=eq.${receiptId}`, {
-          headers: {
-            'apikey': supabase.supabaseKey,
-            'Authorization': `Bearer ${supabase.supabaseKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch receipt');
-        }
-        
-        const receiptData = await response.json();
-        if (receiptData && receiptData.length > 0) {
-          setReceipt(receiptData[0]);
-        } else {
-          throw new Error('Receipt not found');
-        }
-        return;
+        console.error('Error fetching receipt:', error);
+        throw new Error('Failed to fetch receipt');
       }
 
-      if (data && data.length > 0) {
-        setReceipt(data[0]);
+      if (data) {
+        setReceipt(data);
       } else {
         throw new Error('Receipt not found');
       }
