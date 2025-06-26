@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,29 @@ export const Auth = () => {
       setIsSignUp(true); // Force sign-up mode for invite links
     }
   }, []);
+
+  const ensureUserProfile = async (userId: string, userEmail: string) => {
+    console.log('Ensuring user profile exists for:', userId);
+    
+    try {
+      // Call the ensure_user_profile function
+      const { data, error } = await supabase.rpc('ensure_user_profile', {
+        user_id: userId,
+        user_email: userEmail
+      });
+
+      if (error) {
+        console.error('Error ensuring user profile:', error);
+        throw error;
+      }
+
+      console.log('User profile ensured, company_id:', data);
+      return data; // This is the company_id
+    } catch (error) {
+      console.error('Failed to ensure user profile:', error);
+      throw error;
+    }
+  };
 
   const handleInviteUser = async (userId: string, userEmail: string) => {
     if (!inviteCompanyId) return;
@@ -128,40 +152,61 @@ export const Auth = () => {
 
         console.log('Sign-up successful, user:', data.user?.id);
 
-        // Handle invite users
-        if (data.user && inviteCompanyId) {
+        // Ensure user profile is created with company_id
+        if (data.user) {
           try {
-            await handleInviteUser(data.user.id, data.user.email || email);
+            // Wait for trigger to complete
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
-            toast({
-              title: "Account created!",
-              description: "Welcome to the team! Please check your email to verify your account.",
-            });
+            // Ensure profile exists and has company_id
+            await ensureUserProfile(data.user.id, data.user.email || email);
+            
+            // Handle invite users
+            if (inviteCompanyId) {
+              await handleInviteUser(data.user.id, data.user.email || email);
+              
+              toast({
+                title: "Account created!",
+                description: "Welcome to the team! Please check your email to verify your account.",
+              });
+            } else {
+              toast({
+                title: "Account created!",
+                description: "Your company has been created! Please check your email to verify your account.",
+              });
+            }
           } catch (profileError: any) {
-            console.error('Invite profile update failed:', profileError);
+            console.error('Profile creation/update failed:', profileError);
             toast({
               title: "Account Created",
-              description: "Your account was created but there was an issue joining the team. Please contact your team administrator.",
+              description: "Your account was created but there was an issue setting up your profile. Please contact support if you encounter issues.",
               variant: "destructive",
             });
           }
-        } else if (data.user) {
-          toast({
-            title: "Account created!",
-            description: "Your company has been created! Please check your email to verify your account.",
-          });
         }
       } else {
         console.log('Starting sign-in process...');
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
+        
         if (error) {
           console.error('Sign-in error:', error);
           throw error;
         }
+        
         console.log('Sign-in successful');
+        
+        // Ensure profile exists for existing users who might not have company_id
+        if (data.user) {
+          try {
+            await ensureUserProfile(data.user.id, data.user.email || email);
+          } catch (profileError) {
+            console.error('Failed to ensure profile on login:', profileError);
+            // Don't block login for this
+          }
+        }
       }
     } catch (error: any) {
       console.error('Auth error:', error);

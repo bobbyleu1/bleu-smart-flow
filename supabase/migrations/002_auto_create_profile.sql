@@ -8,19 +8,29 @@ DROP FUNCTION IF EXISTS public.ensure_user_profile(UUID, TEXT);
 CREATE OR REPLACE FUNCTION public.ensure_user_profile(user_id UUID, user_email TEXT)
 RETURNS UUID AS $$
 DECLARE
+  existing_company_id UUID;
   new_company_id UUID;
 BEGIN
-  -- Check if profile already exists
-  SELECT company_id INTO new_company_id FROM public.profiles WHERE id = user_id;
+  -- Check if profile already exists and get company_id
+  SELECT company_id INTO existing_company_id FROM public.profiles WHERE id = user_id;
   
   IF NOT FOUND THEN
-    -- Create new profile with company_id
+    -- Create new profile with new company_id
     new_company_id := gen_random_uuid();
     INSERT INTO public.profiles (id, email, company_id, role)
     VALUES (user_id, user_email, new_company_id, 'invoice_owner');
+    RETURN new_company_id;
+  ELSIF existing_company_id IS NULL THEN
+    -- Profile exists but no company_id, generate one
+    new_company_id := gen_random_uuid();
+    UPDATE public.profiles 
+    SET company_id = new_company_id
+    WHERE id = user_id;
+    RETURN new_company_id;
+  ELSE
+    -- Profile exists with company_id, return existing
+    RETURN existing_company_id;
   END IF;
-  
-  RETURN new_company_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -28,13 +38,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, company_id, role)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    gen_random_uuid(),
-    'invoice_owner'
-  );
+  -- Use the ensure_user_profile function to handle profile creation
+  PERFORM public.ensure_user_profile(NEW.id, NEW.email);
   RETURN NEW;
 EXCEPTION
   WHEN unique_violation THEN
