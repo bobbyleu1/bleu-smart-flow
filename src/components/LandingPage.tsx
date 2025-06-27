@@ -47,7 +47,7 @@ export const LandingPage = ({ onSignUp, onDemo }: LandingPageProps) => {
             </p>
 
             {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-4">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <Button
                 onClick={onSignUp}
                 className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-lg font-semibold"
@@ -65,11 +65,6 @@ export const LandingPage = ({ onSignUp, onDemo }: LandingPageProps) => {
                 Preview in Demo Mode
               </Button>
             </div>
-
-            {/* Promo Note */}
-            <p className="text-sm text-gray-500">
-              Cletus Crew gets $20 in free invoice credits. Code auto-applied at signup.
-            </p>
           </div>
 
           {/* Features Grid */}
