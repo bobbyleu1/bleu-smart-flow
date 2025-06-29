@@ -3,8 +3,11 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
-export default defineConfig(({ mode }) => ({
-  base: "/bleu-smart-flow/", // ✅ Required for GitHub Pages
+export default defineConfig({
+  publicDir: 'public', // ✅ ensures Vite copies your manifest + icons
+  plugins: [react()],
+});
+
 
   server: {
     host: "0.0.0.0",
