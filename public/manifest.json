@@ -1,0 +1,21 @@
+{
+  "name": "Bleu SmartFlow",
+  "short_name": "SmartFlow",
+  "start_url": "https://bleusmartflow.com/",
+  "display": "standalone",
+  "background_color": "#004AAD",
+  "theme_color": "#004AAD",
+  "description": "Effortlessly create invoices, collect payments, and manage your business with Bleu SmartFlow.",
+  "id": "com.bleu.smartflow",
+  "icons": [
+  {
+    "src": "/icon-192x192.png",
+    "sizes": "192x192",
+    "type": "image/png"
+  },
+  {
+    "src": "/icon-512x512.png",
+    "sizes": "512x512",
+    "type": "image/png"
+  }
+]
