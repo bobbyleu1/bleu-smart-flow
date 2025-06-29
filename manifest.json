@@ -1,7 +1,7 @@
 {
   "name": "Bleu SmartFlow",
   "short_name": "SmartFlow",
-  "start_url": "/",
+  "start_url": "https://bleusmartflow.com/",
   "display": "standalone",
   "background_color": "#004AAD",
   "theme_color": "#004AAD",
